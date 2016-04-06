@@ -33,7 +33,7 @@
 -export([create_schema/2]).
 -export([persist/2]).
 -export([delete_by/3, delete_all/2]).
--export([find_all/2, find_all/5, find_by/3, find_by/5, find_by/6]).
+-export([find_all/2, find_all/5, find_by/3, find_by/5, find_by/6, find_by/7]).
 -export([call/4]).
 
 %%% Exports for gen_server
@@ -78,6 +78,9 @@
 -callback find_by(sumo:schema_name(), sumo:conditions(), sumo:sort(),
                   non_neg_integer(), non_neg_integer(), State) ->
             result([sumo_internal:doc()], State).
+-callback find_by(sumo:schema_name(), sumo:conditions(), binary(), sumo:sort(),
+                  non_neg_integer(), non_neg_integer(), State) ->
+            result([sumo_internal:doc()], State).          
 -callback find_all(sumo:schema_name(), State) ->
             result([sumo_internal:doc()], State).
 -callback find_all(sumo:schema_name(), sumo:sort(), non_neg_integer(),
@@ -169,6 +172,12 @@ find_by(Name, DocName, Conditions, Limit, Offset) ->
 find_by(Name, DocName, Conditions, SortFields, Limit, Offset) ->
   wpool:call(Name, {find_by, DocName, Conditions, SortFields, Limit, Offset}).
 
+-spec find_by(
+  atom(), sumo:schema_name(), sumo:conditions(), binary(),
+  sumo:sort(), non_neg_integer(), non_neg_integer()
+) -> {ok, [sumo_internal:doc()]} | {error, term()}.
+find_by(Name, DocName, Conditions, Filter, SortFields, Limit, Offset) ->
+  wpool:call(Name, {find_by, DocName, Conditions, Filter, SortFields, Limit, Offset}).
 
 %% @doc Calls a custom function in the given store name.
 -spec call(
@@ -255,6 +264,15 @@ handle_call(
 ) ->
   {OkOrError, Reply, NewState} = Handler:find_by(
     DocName, Conditions, SortFields, Limit, Offset, HState
+  ),
+  {reply, {OkOrError, Reply}, State#state{handler_state=NewState}};
+
+handle_call(
+  {find_by, DocName, Conditions, Filter, SortFields, Limit, Offset}, _From,
+  #state{handler = Handler, handler_state = HState} = State
+) ->
+  {OkOrError, Reply, NewState} = Handler:find_by(
+    DocName, Conditions, Filter, SortFields, Limit, Offset, HState
   ),
   {reply, {OkOrError, Reply}, State#state{handler_state=NewState}};
 

@@ -34,7 +34,7 @@
 %%% API for standard CRUD functions.
 -export([persist/2, delete/2, delete_by/2, delete_all/1]).
 -export([find/2, find_all/1, find_all/4]).
--export([find_by/2, find_by/4, find_by/5, find_one/2]).
+-export([find_by/2, find_by/4, find_by/5, find_by/6, find_one/2]).
 -export([call/2, call/3]).
 
 -type schema_name() :: atom().
@@ -162,6 +162,25 @@ find_by(DocName, Conditions, SortFields0, Limit, Offset) ->
   Store = sumo_internal:get_store(DocName),
   case sumo_store:find_by(
          Store, DocName, Conditions, SortFields, Limit, Offset
+        ) of
+    {ok, Docs} -> docs_wakeup(DocName, Docs);
+    Error -> throw(Error)
+  end.
+
+%% emnvn added for distance searching
+-spec find_by(
+        schema_name(),
+        conditions(),
+        binary(),
+        sort(),
+        non_neg_integer(),
+        non_neg_integer()
+       ) -> [user_doc()].
+find_by(DocName, Conditions, Filter, SortFields0, Limit, Offset) ->
+  SortFields = normalize_sort_fields(SortFields0),
+  Store = sumo_internal:get_store(DocName),
+  case sumo_store:find_by(
+         Store, DocName, Conditions, Filter, SortFields, Limit, Offset
         ) of
     {ok, Docs} -> docs_wakeup(DocName, Docs);
     Error -> throw(Error)
