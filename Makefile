@@ -2,19 +2,15 @@ PROJECT = sumo_db
 
 CONFIG ?= test/test.config
 
-DEPS = lager emysql emongo tirerl epgsql worker_pool riakc uuid
+DEPS = lager worker_pool riakc uuid
 
-dep_lager = git https://github.com/basho/lager.git 2.1.1
-dep_emysql = git https://github.com/Eonblast/Emysql.git v0.4.1
-dep_emongo = git https://github.com/inaka/emongo.git v0.2.1
-dep_tirerl = git https://github.com/inaka/tirerl 0.1.7
-dep_epgsql = git https://github.com/epgsql/epgsql 2.0.0
-dep_worker_pool = git https://github.com/inaka/worker_pool.git 1.0.2
-dep_riakc = git https://github.com/inaka/riak-erlang-client.git 2.1.1-dialyzed
-dep_uuid = git git://github.com/okeuday/uuid.git v1.4.0
+dep_lager = git https://github.com/basho/lager.git 3.0.0
+dep_worker_pool = git https://github.com/inaka/worker_pool.git 2.2.0
+dep_riakc = git https://github.com/inaka/riak-erlang-client.git 2.1.1-R18
+dep_uuid = git git://github.com/okeuday/uuid.git v1.5.3
 
 TEST_DEPS = mixer
-dep_mixer = git git://github.com/inaka/mixer.git 0.1.2
+dep_mixer = git git://github.com/inaka/mixer.git 0.1.3
 
 PLT_APPS := mnesia
 DIALYZER_DIRS := ebin/
