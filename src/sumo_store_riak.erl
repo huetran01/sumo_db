@@ -37,6 +37,7 @@
 -behavior(sumo_store).
 
 -include_lib("riakc/include/riakc.hrl").
+-include("sumo.hrl").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Exports.
@@ -47,7 +48,7 @@
 -export([create_schema/2]).
 -export([persist/2]).
 -export([delete_by/3, delete_all/2]).
--export([find_all/2, find_all/5, find_by/3, find_by/5, find_by/6]).
+-export([find_all/2, find_all/5, find_by/3, find_by/5, find_by/6, find_by/7]).
 
 %% Utilities
 -export([doc_to_rmap/1, map_to_rmap/1, rmap_to_doc/2, rmap_to_map/1]).
@@ -58,10 +59,6 @@
 %% Types.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%% Riak base parameters
--type connection() :: pid().
--type index()      :: binary().
--type options()    :: [proplists:property()].
 
 -export_type([connection/0, index/0, options/0]).
 
@@ -89,8 +86,8 @@
 init(Opts) ->
   % The storage backend key in the options specifies the name of the process
   % which creates and initializes the storage backend.
-  Backend = proplists:get_value(storage_backend, Opts),
-  Conn = sumo_backend_riak:get_connection(Backend),
+  % Backend = proplists:get_value(storage_backend, Opts),
+  % Conn = sumo_backend_riak:get_connection(Backend),
   BucketType = iolist_to_binary(
     proplists:get_value(bucket_type, Opts, <<"maps">>)),
   Bucket = iolist_to_binary(
@@ -100,7 +97,7 @@ init(Opts) ->
   GetOpts = proplists:get_value(get_options, Opts, []),
   PutOpts = proplists:get_value(put_options, Opts, []),
   DelOpts = proplists:get_value(delete_options, Opts, []),
-  State = #state{conn = Conn,
+  State = #state{%conn = Conn,
                  bucket = {BucketType, Bucket},
                  index = Index,
                  get_opts = GetOpts,
@@ -253,6 +250,18 @@ find_by(DocName, Conditions, Limit, Offset,
   state()
 ) -> sumo_store:result([sumo_internal:doc()], state()).
 find_by(_DocName, _Conditions, _SortFields, _Limit, _Offset, State) ->
+  {error, not_supported, State}.
+
+-spec find_by(
+  sumo:schema_name(),
+  sumo:conditions(),
+  term(),
+  term(),
+  non_neg_integer(),
+  non_neg_integer(),
+  state()
+) -> sumo_store:result([sumo_internal:doc()], state()).
+find_by(_DocName, _Conditions, _Filters, _SortFields, _Limit, _Offset, State) ->
   {error, not_supported, State}.
 
 -spec create_schema(

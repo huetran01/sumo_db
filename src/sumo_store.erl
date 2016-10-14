@@ -29,7 +29,8 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%% Public API.
--export([start_link/3]).
+% -export([start_link/3]).
+-export([start_link/1]).
 -export([create_schema/2]).
 -export([persist/2]).
 -export([delete_by/3, delete_all/2]).
@@ -45,6 +46,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Types.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+-include("sumo.hrl").
 
 -record(state, {
   handler = undefined:: module(),
@@ -93,49 +95,72 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% @doc Starts and links a new process for the given store implementation.
--spec start_link(atom(), module(), [term()]) -> {ok, pid()}.
-start_link(Name, Module, Options) ->
-  Poolsize        = proplists:get_value(workers, Options, 100),
-  WPoolConfigOpts = application:get_env(sumo_db, wpool_opts, []),
-  WPoolOptions    = [ {overrun_warning, 5000}
-                    , {overrun_handler, {sumo_internal, report_overrun}}
-                    , {workers, Poolsize}
-                    , {worker, {?MODULE, [Module, Options]}}
-                    ],
-  wpool:start_pool(Name, WPoolConfigOpts ++ WPoolOptions).
+-spec start_link([term()]) -> {ok, pid()}.
+start_link(Stores) ->
+  gen_server:start_link({local, ?MODULE}, ?MODULE, [Stores], []).
 
 %% @doc Creates the schema of the given docs in the given store name.
 -spec create_schema(atom(), sumo:schema()) -> ok | {error, term()}.
 create_schema(Name, Schema) ->
-  wpool:call(Name, {create_schema, Schema}).
+  case get_state(Name) of 
+  #state{handler = Handler, handler_state = HState} ->
+    wpool:call(?WRITE, {create_schema, Schema, HState, Handler});
+  Reason ->
+    {error, Reason}
+  end.
+  % wpool:call(Name, {create_schema, Schema}).
 
 %% @doc Persist the given doc with the given store name.
 -spec persist(
   atom(), sumo_internal:doc()
 ) -> {ok, sumo_internal:doc()} | {error, term()}.
 persist(Name, Doc) ->
-  wpool:call(Name, {persist, Doc}).
+  case get_state(Name) of 
+  #state{handler = Handler, handler_state = HState}  ->
+    wpool:call(?WRITE, {persist, Doc, HState, Handler});
+  Reason ->
+    {error, Reason}
+  end. 
+  % wpool:call(Name, {persist, Doc}).
 
 %% @doc Deletes the docs identified by the given conditions.
 -spec delete_by(
   atom(), sumo:schema_name(), sumo:conditions()
 ) -> {ok, non_neg_integer()} | {error, term()}.
 delete_by(Name, DocName, Conditions) ->
-  wpool:call(Name, {delete_by, DocName, Conditions}).
+  case get_state(Name) of 
+  #state{handler = Handler, handler_state = HState}  ->
+    wpool:call(?WRITE, {delete_by, DocName, Conditions, HState, Handler});
+  Reason ->
+    {error, Reason}
+  end. 
+  % wpool:call(Name, {delete_by, DocName, Conditions}).
 
 %% @doc Deletes all docs in the given store name.
 -spec delete_all(
   atom(), sumo:schema_name()
 ) -> {ok, non_neg_integer()} | {error, term()}.
 delete_all(Name, DocName) ->
-  wpool:call(Name, {delete_all, DocName}).
+  case get_state(Name) of 
+   #state{handler = Handler, handler_state = HState}  ->
+    wpool:call(?WRITE, {delete_all, DocName, HState, Handler});
+  Reason ->
+    {error, Reason}
+  end.
+  % wpool:call(Name, {delete_all, DocName}).
 
 %% @doc Returns all docs from the given store name.
 -spec find_all(
   atom(), sumo:schema_name()
 ) -> {ok, [sumo_internal:doc()]} | {error, term()}.
 find_all(Name, DocName) ->
-  wpool:call(Name, {find_all, DocName}).
+  case get_state(Name) of 
+  #state{handler = Handler, handler_state = HState}   ->
+    wpool:call(?READ, {find_all, DocName, HState, Handler});
+  Reason ->
+    {error, Reason}
+  end.
+  % wpool:call(Name, {find_all, DocName}).
 
 %% @doc Returns Limit docs starting at Offset from the given store name,
 %% ordered by OrderField. OrderField may be 'undefined'.
@@ -144,7 +169,13 @@ find_all(Name, DocName) ->
   non_neg_integer(), non_neg_integer()
 ) -> {ok, [sumo_internal:doc()]} | {error, term()}.
 find_all(Name, DocName, SortFields, Limit, Offset) ->
-  wpool:call(Name, {find_all, DocName, SortFields, Limit, Offset}).
+  case get_state(Name) of 
+  #state{handler = Handler, handler_state = HState}  ->
+    wpool:call(?READ, {find_all, DocName, SortFields, Limit, Offset, HState, Handler});
+  Reason ->
+    {error, Reason}
+  end.
+  % wpool:call(Name, {find_all, DocName, SortFields, Limit, Offset}).
 
 %% @doc Finds documents that match the given conditions in the given
 %% store name.
@@ -152,7 +183,14 @@ find_all(Name, DocName, SortFields, Limit, Offset) ->
   atom(), sumo:schema_name(), sumo:conditions()
 ) -> {ok, [sumo_internal:doc()]} | {error, term()}.
 find_by(Name, DocName, Conditions) ->
-  wpool:call(Name, {find_by, DocName, Conditions}).
+  case get_state(Name) of 
+  #state{handler = Handler, handler_state = HState}  ->
+    wpool:call(?READ, {find_by, DocName, Conditions, HState, Handler});
+    % handle_find_by(DocName, Conditions, State);
+  Reason ->
+    {error, Reason}
+  end.
+  % wpool:call(Name, {find_by, DocName, Conditions}).
 
 %% @doc Finds documents that match the given conditions in the given
 %% store name.
@@ -161,7 +199,13 @@ find_by(Name, DocName, Conditions) ->
   non_neg_integer(), non_neg_integer()
 ) -> {ok, [sumo_internal:doc()]} | {error, term()}.
 find_by(Name, DocName, Conditions, Limit, Offset) ->
-  wpool:call(Name, {find_by, DocName, Conditions, Limit, Offset}).
+  case get_state(Name) of 
+  #state{handler = Handler, handler_state = HState}  ->
+    wpool:call(?READ, {find_by, DocName, Conditions, Limit, Offset, HState, Handler});
+  Reason ->
+    {error, Reason}
+  end.
+  % wpool:call(Name, {find_by, DocName, Conditions, Limit, Offset}).
 
 %% @doc Finds documents that match the given conditions in the given
 %% store name.
@@ -170,26 +214,47 @@ find_by(Name, DocName, Conditions, Limit, Offset) ->
   sumo:sort(), non_neg_integer(), non_neg_integer()
 ) -> {ok, [sumo_internal:doc()]} | {error, term()}.
 find_by(Name, DocName, Conditions, SortFields, Limit, Offset) ->
-  wpool:call(Name, {find_by, DocName, Conditions, SortFields, Limit, Offset}).
+  case get_state(Name) of 
+  #state{handler = Handler, handler_state = HState}  ->
+    wpool:call(?READ, {find_by, DocName, Conditions, SortFields, Limit, Offset, HState, Handler});
+    %handle_find_by(DocName, Conditions, SortFields, Limit, Offset, State);
+  Reason ->
+    {error, Reason}
+  end.
+
+  % wpool:call(Name, {find_by, DocName, Conditions, SortFields, Limit, Offset}).
 
 -spec find_by(
   atom(), sumo:schema_name(), sumo:conditions(), binary(),
   sumo:sort(), non_neg_integer(), non_neg_integer()
 ) -> {ok, [sumo_internal:doc()]} | {error, term()}.
 find_by(Name, DocName, Conditions, Filter, SortFields, Limit, Offset) ->
-  wpool:call(Name, {find_by, DocName, Conditions, Filter, SortFields, Limit, Offset}).
+  case get_state(Name) of 
+  #state{handler = Handler, handler_state = HState}  ->
+    wpool:call(?READ, {find_by, DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler});
+  Reason ->
+    {error, Reason}
+  end.
+  % wpool:call(Name, {find_by, DocName, Conditions, Filter, SortFields, Limit, Offset}).
 
 %% @doc Calls a custom function in the given store name.
 -spec call(
   atom(), sumo:schema_name(), atom(), [term()]
 ) -> ok | {ok, term()} | {error, term()}.
 call(Name, DocName, Function, Args) ->
-  {ok, Timeout} = application:get_env(sumo_db, query_timeout),
-  wpool:call(
-    Name,
-    {call, DocName, Function, Args},
-    wpool:default_strategy(),
-    Timeout).
+  % {ok, Timeout} = application:get_env(sumo_db, query_timeout),
+  case get_state(Name) of 
+  #state{handler = Handler, handler_state = HState}  ->
+    wpool:call(?WRITE, {call, Handler, Function, Args, DocName, HState});
+  Reason ->
+    {error, Reason}
+  end.
+
+  % wpool:call(
+  %   Name,
+  %   {call, DocName, Function, Args},
+  %   wpool:default_strategy(),
+  %   Timeout).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% gen_server stuff.
@@ -197,104 +262,132 @@ call(Name, DocName, Function, Args) ->
 
 %% @doc Called by start_link.
 %% @hidden
--spec init([term()]) -> {ok, state()}.
-init([Module, Options]) ->
-  {ok, HState} = Module:init(Options),
-  {ok, #state{handler=Module, handler_state=HState}}.
+% -spec init([term()]) -> {ok, state()}.
+% init([Module, Options]) ->
+%   {ok, HState} = Module:init(Options),
+%   {ok, #state{handler=Module, handler_state=HState}}.
+
+init([Stores]) ->
+  Options = lists:map(fun({Name, Module, Options}) ->  
+    {ok, HState} = Module:init(Options),
+    {Name, #state{handler=Module, handler_state=HState}}
+  end, Stores),
+  sumo_store_opts:init(Options),
+  {ok, #state{}}.
+
 
 %% @doc handles calls.
 %% @hidden
--spec handle_call(term(), _, state()) -> {reply, tuple(), state()}.
-handle_call(
-  {persist, Doc}, _From,
-  #state{handler = Handler, handler_state = HState} = State
-) ->
-  {OkOrError, Reply, NewState} = Handler:persist(Doc, HState),
-  {reply, {OkOrError, Reply}, State#state{handler_state=NewState}};
+% -spec handle_call(term(), _, state()) -> {reply, tuple(), state()}.
+% handle_call(
+%   {persist, Doc}, _From,
+%   #state{handler = Handler, handler_state = HState} = State
+% ) ->
+%   {OkOrError, Reply, NewState} = Handler:persist(Doc, HState),
+%   {reply, {OkOrError, Reply}, State#state{handler_state=NewState}};
 
-handle_call(
-  {delete_by, DocName, Conditions}, _From,
-  #state{handler = Handler, handler_state = HState} = State
-) ->
-  {OkOrError, Reply, NewState} = Handler:delete_by(DocName, Conditions, HState),
-  {reply, {OkOrError, Reply}, State#state{handler_state=NewState}};
 
-handle_call(
-  {delete_all, DocName}, _From,
-  #state{handler = Handler, handler_state = HState} = State
-) ->
-  {OkOrError, Reply, NewState} = Handler:delete_all(DocName, HState),
-  {reply, {OkOrError, Reply}, State#state{handler_state=NewState}};
+% handle_call(
+%   {delete_by, DocName, Conditions}, _From,
+%   #state{handler = Handler, handler_state = HState} = State
+% ) ->
+%   {OkOrError, Reply, NewState} = Handler:delete_by(DocName, Conditions, HState),
+%   {reply, {OkOrError, Reply}, State#state{handler_state=NewState}};
 
-handle_call(
-  {find_all, DocName}, _From,
-  #state{handler = Handler, handler_state = HState} = State
-) ->
-  {OkOrError, Reply, NewState} = Handler:find_all(DocName, HState),
-  {reply, {OkOrError, Reply}, State#state{handler_state = NewState}};
 
-handle_call(
-  {find_all, DocName, SortFields, Limit, Offset}, _From,
-  #state{handler = Handler, handler_state = HState} = State
-) ->
-  {OkOrError, Reply, NewState} = Handler:find_all(
-    DocName, SortFields, Limit, Offset, HState
-  ),
-  {reply, {OkOrError, Reply}, State#state{handler_state = NewState}};
+% handle_call(
+%   {delete_all, DocName}, _From,
+%   #state{handler = Handler, handler_state = HState} = State
+% ) ->
+%   {OkOrError, Reply, NewState} = Handler:delete_all(DocName, HState),
+%   {reply, {OkOrError, Reply}, State#state{handler_state=NewState}};
 
-handle_call(
-  {find_by, DocName, Conditions}, _From,
-  #state{handler = Handler, handler_state = HState} = State
-) ->
-  {OkOrError, Reply, NewState} = Handler:find_by(DocName, Conditions, HState),
-  {reply, {OkOrError, Reply}, State#state{handler_state=NewState}};
 
-handle_call(
-  {find_by, DocName, Conditions, Limit, Offset}, _From,
-  #state{handler = Handler, handler_state = HState} = State
-) ->
-  {OkOrError, Reply, NewState} = Handler:find_by(
-    DocName, Conditions, Limit, Offset, HState
-  ),
-  {reply, {OkOrError, Reply}, State#state{handler_state=NewState}};
+% handle_call(
+%   {find_all, DocName}, _From,
+%   #state{handler = Handler, handler_state = HState} = State
+% ) ->
+%   {OkOrError, Reply, NewState} = Handler:find_all(DocName, HState),
+%   {reply, {OkOrError, Reply}, State#state{handler_state = NewState}};
 
-handle_call(
-  {find_by, DocName, Conditions, SortFields, Limit, Offset}, _From,
-  #state{handler = Handler, handler_state = HState} = State
-) ->
-  {OkOrError, Reply, NewState} = Handler:find_by(
-    DocName, Conditions, SortFields, Limit, Offset, HState
-  ),
-  {reply, {OkOrError, Reply}, State#state{handler_state=NewState}};
 
-handle_call(
-  {find_by, DocName, Conditions, Filter, SortFields, Limit, Offset}, _From,
-  #state{handler = Handler, handler_state = HState} = State
-) ->
-  {OkOrError, Reply, NewState} = Handler:find_by(
-    DocName, Conditions, Filter, SortFields, Limit, Offset, HState
-  ),
-  {reply, {OkOrError, Reply}, State#state{handler_state=NewState}};
+% handle_call(
+%   {find_all, DocName, SortFields, Limit, Offset}, _From,
+%   #state{handler = Handler, handler_state = HState} = State
+% ) ->
+%   {OkOrError, Reply, NewState} = Handler:find_all(
+%     DocName, SortFields, Limit, Offset, HState
+%   ),
+%   {reply, {OkOrError, Reply}, State#state{handler_state = NewState}};
 
-handle_call(
-  {call, DocName, Function, Args}, _From,
-  #state{handler = Handler, handler_state = HState} = State
-) ->
-  RealArgs = lists:append(Args, [DocName, HState]),
-  {OkOrError, Reply, NewState} = erlang:apply(Handler, Function, RealArgs),
-  {reply, {OkOrError, Reply}, State#state{handler_state=NewState}};
 
-handle_call(
-  {create_schema, Schema}, _From,
-  #state{handler = Handler, handler_state = HState} = State
-) ->
-  {Result, NewState} = case Handler:create_schema(Schema, HState) of
-    {ok, NewState_} -> {ok, NewState_};
-    {error, Error, NewState_} -> {{error, Error}, NewState_}
-  end,
-  {reply, Result, State#state{handler_state=NewState}}.
+% handle_call(
+%   {find_by, DocName, Conditions}, _From,
+%   #state{handler = Handler, handler_state = HState} = State
+% ) ->
+%   {OkOrError, Reply, NewState} = Handler:find_by(DocName, Conditions, HState),
+%   {reply, {OkOrError, Reply}, State#state{handler_state=NewState}};
+
+
+% handle_call(
+%   {find_by, DocName, Conditions, Limit, Offset}, _From,
+%   #state{handler = Handler, handler_state = HState} = State
+% ) ->
+%   {OkOrError, Reply, NewState} = Handler:find_by(
+%     DocName, Conditions, Limit, Offset, HState
+%   ),
+%   {reply, {OkOrError, Reply}, State#state{handler_state=NewState}};
+
+
+% handle_call(
+%   {find_by, DocName, Conditions, SortFields, Limit, Offset}, _From,
+%   #state{handler = Handler, handler_state = HState} = State
+% ) ->
+%   {OkOrError, Reply, NewState} = Handler:find_by(
+%     DocName, Conditions, SortFields, Limit, Offset, HState
+%   ),
+%   {reply, {OkOrError, Reply}, State#state{handler_state=NewState}};
+
+
+% handle_call(
+%   {find_by, DocName, Conditions, Filter, SortFields, Limit, Offset}, _From,
+%   #state{handler = Handler, handler_state = HState} = State
+% ) ->
+%   {OkOrError, Reply, NewState} = Handler:find_by(
+%     DocName, Conditions, Filter, SortFields, Limit, Offset, HState
+%   ),
+%   {reply, {OkOrError, Reply}, State#state{handler_state=NewState}};
+
+
+% handle_call(
+%   {call, DocName, Function, Args}, _From,
+%   #state{handler = Handler, handler_state = HState} = State
+% ) ->
+%   RealArgs = lists:append(Args, [DocName, HState]),
+%   {OkOrError, Reply, NewState} = erlang:apply(Handler, Function, RealArgs),
+%   {reply, {OkOrError, Reply}, State#state{handler_state=NewState}};
+
+
+% handle_call(
+%   {create_schema, Schema}, _From,
+%   #state{handler = Handler, handler_state = HState} = State
+% ) ->
+%   {Result, NewState} = case Handler:create_schema(Schema, HState) of
+%     {ok, NewState_} -> {ok, NewState_};
+%     {error, Error, NewState_} -> {{error, Error}, NewState_}
+%   end,
+%   {reply, Result, State#state{handler_state=NewState}}.
+
+
+get_state(Name) ->
+  catch sumo_store_opts:get_key(Name).
 
 %% @hidden
+-spec handle_call(term(), term(), state()) -> 
+      {reply, term(), state()}.
+handle_call(_Msg, _From, State) ->
+  {reply, ok, State}.
+
 -spec handle_cast(term(), state()) ->
   {noreply, state()}
   | {noreply, state(), non_neg_integer()}

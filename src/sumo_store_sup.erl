@@ -59,8 +59,12 @@ start_link() ->
 -spec init(term()) -> init_result().
 init([]) ->
   {ok, Stores} = application:get_env(sumo_db, stores),
-  Children = lists:map(
-    fun({Name, Module, Options}) -> ?CLD(Name, Module, Options) end,
-    Stores
-  ),
+  Children = [{sumo_store_child, {sumo_store, start_link, [Stores]}, permanent
+              , 5000
+              , worker
+              , [sumo_store]}],
+  % Children = lists:map(
+  %   fun({Name, Module, Options}) -> ?CLD(Name, Module, Options) end,
+  %   Stores
+  % ),
   {ok, { {one_for_one, 5, 10}, Children} }.
