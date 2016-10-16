@@ -145,7 +145,7 @@ handle_call({delete_all, DocName, HState, Handler}, _From, Conn = State) ->
 
 
 handle_call({find_all, DocName, HState, Handler}, _From, Conn = State) ->
-  {OkOrError, Reply, _} = Handler:delete_all(DocName, HState#state{conn = Conn}),
+  {OkOrError, Reply, _} = Handler:find_all(DocName, HState#state{conn = Conn}),
   {reply, {OkOrError, Reply}, State};
 
 handle_call({find_all, DocName, SortFields, Limit, Offset, HState, Handler}, _From, Conn = State) ->

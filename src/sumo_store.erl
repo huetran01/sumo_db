@@ -50,7 +50,8 @@
 
 -record(state, {
   handler = undefined:: module(),
-  handler_state = undefined:: any()
+  handler_state = undefined:: any(),
+  timeout = 5000 :: integer()
 }).
 
 -type state() :: #state{}.
@@ -103,8 +104,8 @@ start_link(Stores) ->
 -spec create_schema(atom(), sumo:schema()) -> ok | {error, term()}.
 create_schema(Name, Schema) ->
   case get_state(Name) of 
-  #state{handler = Handler, handler_state = HState} ->
-    wpool:call(?WRITE, {create_schema, Schema, HState, Handler});
+  #state{handler = Handler, handler_state = HState, timeout = Timeout} ->
+    wpool:call(?WRITE, {create_schema, Schema, HState, Handler}, ?STRATEGY, Timeout) ;
   Reason ->
     {error, Reason}
   end.
@@ -116,8 +117,8 @@ create_schema(Name, Schema) ->
 ) -> {ok, sumo_internal:doc()} | {error, term()}.
 persist(Name, Doc) ->
   case get_state(Name) of 
-  #state{handler = Handler, handler_state = HState}  ->
-    wpool:call(?WRITE, {persist, Doc, HState, Handler});
+  #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
+    wpool:call(?WRITE, {persist, Doc, HState, Handler}, ?STRATEGY, Timeout);
   Reason ->
     {error, Reason}
   end. 
@@ -129,8 +130,8 @@ persist(Name, Doc) ->
 ) -> {ok, non_neg_integer()} | {error, term()}.
 delete_by(Name, DocName, Conditions) ->
   case get_state(Name) of 
-  #state{handler = Handler, handler_state = HState}  ->
-    wpool:call(?WRITE, {delete_by, DocName, Conditions, HState, Handler});
+  #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
+    wpool:call(?WRITE, {delete_by, DocName, Conditions, HState, Handler}, ?STRATEGY, Timeout);
   Reason ->
     {error, Reason}
   end. 
@@ -142,8 +143,8 @@ delete_by(Name, DocName, Conditions) ->
 ) -> {ok, non_neg_integer()} | {error, term()}.
 delete_all(Name, DocName) ->
   case get_state(Name) of 
-   #state{handler = Handler, handler_state = HState}  ->
-    wpool:call(?WRITE, {delete_all, DocName, HState, Handler});
+   #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
+    wpool:call(?WRITE, {delete_all, DocName, HState, Handler}, ?STRATEGY, Timeout);
   Reason ->
     {error, Reason}
   end.
@@ -155,8 +156,8 @@ delete_all(Name, DocName) ->
 ) -> {ok, [sumo_internal:doc()]} | {error, term()}.
 find_all(Name, DocName) ->
   case get_state(Name) of 
-  #state{handler = Handler, handler_state = HState}   ->
-    wpool:call(?READ, {find_all, DocName, HState, Handler});
+  #state{handler = Handler, handler_state = HState, timeout = Timeout}   ->
+    wpool:call(?READ, {find_all, DocName, HState, Handler}, ?STRATEGY, Timeout);
   Reason ->
     {error, Reason}
   end.
@@ -170,8 +171,8 @@ find_all(Name, DocName) ->
 ) -> {ok, [sumo_internal:doc()]} | {error, term()}.
 find_all(Name, DocName, SortFields, Limit, Offset) ->
   case get_state(Name) of 
-  #state{handler = Handler, handler_state = HState}  ->
-    wpool:call(?READ, {find_all, DocName, SortFields, Limit, Offset, HState, Handler});
+  #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
+    wpool:call(?READ, {find_all, DocName, SortFields, Limit, Offset, HState, Handler}, ?STRATEGY, Timeout);
   Reason ->
     {error, Reason}
   end.
@@ -184,8 +185,8 @@ find_all(Name, DocName, SortFields, Limit, Offset) ->
 ) -> {ok, [sumo_internal:doc()]} | {error, term()}.
 find_by(Name, DocName, Conditions) ->
   case get_state(Name) of 
-  #state{handler = Handler, handler_state = HState}  ->
-    wpool:call(?READ, {find_by, DocName, Conditions, HState, Handler});
+  #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
+    wpool:call(?READ, {find_by, DocName, Conditions, HState, Handler}, ?STRATEGY, Timeout);
     % handle_find_by(DocName, Conditions, State);
   Reason ->
     {error, Reason}
@@ -200,8 +201,8 @@ find_by(Name, DocName, Conditions) ->
 ) -> {ok, [sumo_internal:doc()]} | {error, term()}.
 find_by(Name, DocName, Conditions, Limit, Offset) ->
   case get_state(Name) of 
-  #state{handler = Handler, handler_state = HState}  ->
-    wpool:call(?READ, {find_by, DocName, Conditions, Limit, Offset, HState, Handler});
+  #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
+    wpool:call(?READ, {find_by, DocName, Conditions, Limit, Offset, HState, Handler}, ?STRATEGY, Timeout);
   Reason ->
     {error, Reason}
   end.
@@ -215,8 +216,8 @@ find_by(Name, DocName, Conditions, Limit, Offset) ->
 ) -> {ok, [sumo_internal:doc()]} | {error, term()}.
 find_by(Name, DocName, Conditions, SortFields, Limit, Offset) ->
   case get_state(Name) of 
-  #state{handler = Handler, handler_state = HState}  ->
-    wpool:call(?READ, {find_by, DocName, Conditions, SortFields, Limit, Offset, HState, Handler});
+  #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
+    wpool:call(?READ, {find_by, DocName, Conditions, SortFields, Limit, Offset, HState, Handler}, ?STRATEGY, Timeout);
     %handle_find_by(DocName, Conditions, SortFields, Limit, Offset, State);
   Reason ->
     {error, Reason}
@@ -230,8 +231,8 @@ find_by(Name, DocName, Conditions, SortFields, Limit, Offset) ->
 ) -> {ok, [sumo_internal:doc()]} | {error, term()}.
 find_by(Name, DocName, Conditions, Filter, SortFields, Limit, Offset) ->
   case get_state(Name) of 
-  #state{handler = Handler, handler_state = HState}  ->
-    wpool:call(?READ, {find_by, DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler});
+  #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
+    wpool:call(?READ, {find_by, DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler}, ?STRATEGY, Timeout);
   Reason ->
     {error, Reason}
   end.
@@ -244,8 +245,8 @@ find_by(Name, DocName, Conditions, Filter, SortFields, Limit, Offset) ->
 call(Name, DocName, Function, Args) ->
   % {ok, Timeout} = application:get_env(sumo_db, query_timeout),
   case get_state(Name) of 
-  #state{handler = Handler, handler_state = HState}  ->
-    wpool:call(?WRITE, {call, Handler, Function, Args, DocName, HState});
+  #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
+    wpool:call(?WRITE, {call, Handler, Function, Args, DocName, HState}, ?STRATEGY, Timeout);
   Reason ->
     {error, Reason}
   end.
@@ -268,9 +269,10 @@ call(Name, DocName, Function, Args) ->
 %   {ok, #state{handler=Module, handler_state=HState}}.
 
 init([Stores]) ->
+  Timeout = application:get_env(sumo_db, query_timeout, 5000),
   Options = lists:map(fun({Name, Module, Options}) ->  
     {ok, HState} = Module:init(Options),
-    {Name, #state{handler=Module, handler_state=HState}}
+    {Name, #state{handler=Module, handler_state=HState, timeout = Timeout}}
   end, Stores),
   sumo_store_opts:init(Options),
   {ok, #state{}}.
