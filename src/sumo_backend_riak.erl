@@ -180,7 +180,26 @@ handle_call(_Msg, _From, State) ->
 %% Unused Callbacks
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+
 -spec handle_cast(term(), state()) -> {noreply, state()}.
+handle_cast({persist, Doc, HState, Handler}, Conn = State) ->
+  {_OkOrError, Reply, _} = Handler:persist(Doc, HState#state{conn = Conn}),
+  %% TODO next: should call event here
+  lager:debug("sumo: asyn_persist: Doc: ~p,  Reply: ~p ~n",[Doc, Reply]),
+  {noreply, State};
+
+handle_cast({delete_by, DocName, Conditions, HState, Handler}, Conn = State) ->
+  {_OkOrError, Reply, _} = Handler:delete_by(DocName, Conditions, HState#state{conn = Conn}),
+  %% TODO: next : should call event here 
+  lager:debug("sumo: asyn_delete_by: Doc: ~p, Reply: ~p ~n",[DocName, Reply]),
+  {noreply, State};
+
+handle_cast({delete_all, DocName, HState, Handler}, Conn = State) ->
+  {_OkOrError, Reply, _} = Handler:delete_all(DocName, HState#state{conn = Conn}),
+  %% TODO: next: should call event here
+  lager:debug("sumo: async_delete_all: Doc: ~p, Reply: ~p ~n",[DocName, Reply]),
+  {noreply, State};
+
 handle_cast(_Msg, State) -> {noreply, State}.
 
 -spec handle_info(term(), state()) -> {noreply, state()}.

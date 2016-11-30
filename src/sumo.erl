@@ -32,7 +32,7 @@
 -export([create_schema/0, create_schema/1, create_schema/2]).
 
 %%% API for standard CRUD functions.
--export([persist/2, delete/2, delete_by/2, delete_all/1]).
+-export([persist/2, async_persist/2, delete/2, delete_by/2, async_delete_by/2, delete_all/1, async_delete_all/1]).
 -export([find/2, find_all/1, find_all/4]).
 -export([find_by/2, find_by/4, find_by/5, find_by/6, find_one/2]).
 -export([call/2, call/3]).
@@ -204,6 +204,13 @@ persist(DocName, State) ->
     Error -> throw(Error)
   end.
 
+-spec async_persist(schema_name(), user_doc()) -> ok | {error, term()}.
+async_persist(DocName, State) ->
+  % IdField = sumo_internal:id_field_name(DocName),
+  DocMap = DocName:sumo_sleep(State),
+  Store = sumo_internal:get_store(DocName),
+  sumo_store:async_persist(Store, sumo_internal:new_doc(DocName, DocMap)).
+
 %% @doc Deletes all docs of type DocName.
 -spec delete_all(schema_name()) -> non_neg_integer().
 delete_all(DocName) ->
@@ -217,6 +224,13 @@ delete_all(DocName) ->
       NumRows;
     Error -> throw(Error)
   end.
+
+-spec async_delete_all(schema_name()) -> non_neg_integer().
+async_delete_all(DocName) ->
+  Store = sumo_internal:get_store(DocName),
+  sumo_store:async_delete_all(Store, DocName).
+
+
 
 %% @doc Deletes the doc identified by Id.
 -spec delete(schema_name(), user_doc()) -> boolean().
@@ -240,6 +254,11 @@ delete_by(DocName, Conditions) ->
     Error ->
       throw(Error)
   end.
+
+-spec async_delete_by(schema_name(), conditions()) -> ok | {error, term()}.
+async_delete_by(DocName, Conditions) ->
+  Store = sumo_internal:get_store(DocName),
+  sumo_store:async_delete_by(Store, DocName, Conditions).
 
 %% @doc Creates the schema for the docs of type DocName.
 -spec create_schema(schema_name()) -> ok.

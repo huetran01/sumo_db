@@ -32,8 +32,8 @@
 % -export([start_link/3]).
 -export([start_link/1]).
 -export([create_schema/2]).
--export([persist/2]).
--export([delete_by/3, delete_all/2]).
+-export([persist/2, async_persist/2]).
+-export([delete_by/3, async_delete_by/3, delete_all/2, async_delete_all/2]).
 -export([find_all/2, find_all/5, find_by/3, find_by/5, find_by/6, find_by/7]).
 -export([call/4]).
 
@@ -122,7 +122,16 @@ persist(Name, Doc) ->
   Reason ->
     {error, Reason}
   end. 
-  % wpool:call(Name, {persist, Doc}).
+% wpool:call(Name, {persist, Doc}).
+
+-spec async_persist(atom(), sumo_internal:doc()) -> ok.
+async_persist(Name, Doc) ->
+  case get_state(Name) of 
+  #state{handler = Handler, handler_state = HState}  ->
+    wpool:cast(?WRITE, {persist, Doc, HState, Handler});
+  Reason ->
+    {error, Reason}
+  end.
 
 %% @doc Deletes the docs identified by the given conditions.
 -spec delete_by(
@@ -136,6 +145,15 @@ delete_by(Name, DocName, Conditions) ->
     {error, Reason}
   end. 
   % wpool:call(Name, {delete_by, DocName, Conditions}).
+-spec async_delete_by(atom(), sumo:schema_name(), sumo:conditions()) -> 
+                                                            ok | {error, term()}.
+async_delete_by(Name, DocName, Conditions) ->
+  case get_state(Name) of 
+  #state{handler = Handler, handler_state = HState}  ->
+    wpool:cast(?WRITE, {delete_by, DocName, Conditions, HState, Handler});
+  Reason ->
+    {error, Reason}
+  end. 
 
 %% @doc Deletes all docs in the given store name.
 -spec delete_all(
@@ -149,6 +167,18 @@ delete_all(Name, DocName) ->
     {error, Reason}
   end.
   % wpool:call(Name, {delete_all, DocName}).
+
+%% @doc Deletes all docs in the given store name.
+-spec async_delete_all(
+  atom(), sumo:schema_name()
+) -> ok | {error, term()}.
+async_delete_all(Name, DocName) ->
+  case get_state(Name) of 
+   #state{handler = Handler, handler_state = HState}  ->
+    wpool:cast(?WRITE, {delete_all, DocName, HState, Handler});
+  Reason ->
+    {error, Reason}
+  end.
 
 %% @doc Returns all docs from the given store name.
 -spec find_all(
