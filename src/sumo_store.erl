@@ -32,7 +32,7 @@
 % -export([start_link/3]).
 -export([start_link/1]).
 -export([create_schema/2]).
--export([persist/2, async_persist/2]).
+-export([persist/2, async_persist/2, update/3, async_update/3]).
 -export([delete_by/3, async_delete_by/3, delete_all/2, async_delete_all/2]).
 -export([find_all/2, find_all/5, find_by/3, find_by/5, find_by/6, find_by/7]).
 -export([call/4]).
@@ -122,6 +122,23 @@ persist(Name, Doc) ->
   Reason ->
     {error, Reason}
   end. 
+
+-spec update(
+  atom(), binary(), sumo_internal:doc()
+) -> {ok, sumo_internal:doc()} | {error, term()}.
+update(Name, Key, Doc) ->
+  case get_state(Name) of 
+  #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
+    case  get(Key) of 
+    undefined ->  
+      wpool:call(?WRITE, {persist, Doc, HState, Handler}, ?STRATEGY, Timeout);
+    OldObj -> 
+      wpool:call(?WRITE, {persist, OldObj, Doc, HState, Handler}, ?STRATEGY, Timeout)
+    end;
+  Reason ->
+    {error, Reason}
+  end. 
+
 % wpool:call(Name, {persist, Doc}).
 
 -spec async_persist(atom(), sumo_internal:doc()) -> ok.
@@ -132,6 +149,21 @@ async_persist(Name, Doc) ->
   Reason ->
     {error, Reason}
   end.
+
+-spec async_update(atom(), binary(), sumo_internal:doc()) -> ok.
+async_update(Name, Key, Doc) ->
+  case get_state(Name) of 
+  #state{handler = Handler, handler_state = HState}  ->
+    case get(Key) of 
+    undefined -> 
+      wpool:cast(?WRITE, {persist, Doc, HState, Handler});
+    OldObj -> 
+      wpool:cast(?WRITE, {persist, OldObj, Doc, HState, Handler})
+    end;
+  Reason ->
+    {error, Reason}
+  end.
+
 
 %% @doc Deletes the docs identified by the given conditions.
 -spec delete_by(
@@ -216,7 +248,9 @@ find_all(Name, DocName, SortFields, Limit, Offset) ->
 find_by(Name, DocName, Conditions) ->
   case get_state(Name) of 
   #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
-    wpool:call(?READ, {find_by, DocName, Conditions, HState, Handler}, ?STRATEGY, Timeout);
+    Reply = wpool:call(?READ, {find_by, DocName, Conditions, HState, Handler}, ?STRATEGY, Timeout),
+    lager:info("Reply: ~p",[Reply]),
+    handle_reply(DocName, Reply);
     % handle_find_by(DocName, Conditions, State);
   Reason ->
     {error, Reason}
@@ -232,7 +266,9 @@ find_by(Name, DocName, Conditions) ->
 find_by(Name, DocName, Conditions, Limit, Offset) ->
   case get_state(Name) of 
   #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
-    wpool:call(?READ, {find_by, DocName, Conditions, Limit, Offset, HState, Handler}, ?STRATEGY, Timeout);
+    Reply = wpool:call(?READ, {find_by, DocName, Conditions, Limit, Offset, HState, Handler}, ?STRATEGY, Timeout),
+    lager:info("Reply: ~p",[Reply]),
+    handle_reply(DocName, Reply);
   Reason ->
     {error, Reason}
   end.
@@ -247,13 +283,12 @@ find_by(Name, DocName, Conditions, Limit, Offset) ->
 find_by(Name, DocName, Conditions, SortFields, Limit, Offset) ->
   case get_state(Name) of 
   #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
-    wpool:call(?READ, {find_by, DocName, Conditions, SortFields, Limit, Offset, HState, Handler}, ?STRATEGY, Timeout);
-    %handle_find_by(DocName, Conditions, SortFields, Limit, Offset, State);
+    Reply= wpool:call(?READ, {find_by, DocName, Conditions, SortFields, Limit, Offset, HState, Handler}, ?STRATEGY, Timeout),
+    lager:info("Reply: ~p",[Reply]),
+    handle_reply(DocName, Reply);
   Reason ->
     {error, Reason}
   end.
-
-  % wpool:call(Name, {find_by, DocName, Conditions, SortFields, Limit, Offset}).
 
 -spec find_by(
   atom(), sumo:schema_name(), sumo:conditions(), binary(),
@@ -262,11 +297,12 @@ find_by(Name, DocName, Conditions, SortFields, Limit, Offset) ->
 find_by(Name, DocName, Conditions, Filter, SortFields, Limit, Offset) ->
   case get_state(Name) of 
   #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
-    wpool:call(?READ, {find_by, DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler}, ?STRATEGY, Timeout);
+    Reply = wpool:call(?READ, {find_by, DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler}, ?STRATEGY, Timeout),
+    lager:info("Reply: ~p",[Reply]),
+    handle_reply(DocName, Reply);
   Reason ->
     {error, Reason}
   end.
-  % wpool:call(Name, {find_by, DocName, Conditions, Filter, SortFields, Limit, Offset}).
 
 %% @doc Calls a custom function in the given store name.
 -spec call(
@@ -281,11 +317,20 @@ call(Name, DocName, Function, Args) ->
     {error, Reason}
   end.
 
-  % wpool:call(
-  %   Name,
-  %   {call, DocName, Function, Args},
-  %   wpool:default_strategy(),
-  %   Timeout).
+handle_reply(_DocName, {ok, []} = Reply) -> Reply;
+handle_reply(DocName, {ok, DataResp}) ->
+  NewDataResp = 
+  lists:map(fun
+    (#{doc := Doc, obj := Obj}) ->
+      DocField = sumo_internal:doc_fields(Doc),
+      IdField = sumo_internal:id_field_name(DocName),
+      Key = maps:get(IdField, DocField),
+      put(Key, Obj),
+      Doc;
+    (Resp) -> Resp 
+  end, DataResp),
+  {ok, NewDataResp};
+handle_reply(_DocName, Reply) -> Reply.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% gen_server stuff.
@@ -297,7 +342,7 @@ call(Name, DocName, Function, Args) ->
 % init([Module, Options]) ->
 %   {ok, HState} = Module:init(Options),
 %   {ok, #state{handler=Module, handler_state=HState}}.
-
+-spec init(list()) -> {ok, #state{}}.
 init([Stores]) ->
   Timeout = application:get_env(sumo_db, query_timeout, 5000),
   Options = lists:map(fun({Name, Module, Options}) ->  

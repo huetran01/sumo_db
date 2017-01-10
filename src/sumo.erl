@@ -191,25 +191,45 @@ find_by(DocName, Conditions, Filter, SortFields0, Limit, Offset) ->
 persist(DocName, State) ->
   IdField = sumo_internal:id_field_name(DocName),
   DocMap = DocName:sumo_sleep(State),
-  EventName = case maps:get(IdField, DocMap, undefined) of
-                undefined -> created;
-                _ -> updated
-              end,
-  Store = sumo_internal:get_store(DocName),
-  case sumo_store:persist(Store, sumo_internal:new_doc(DocName, DocMap)) of
-    {ok, NewDoc} ->
-      Ret = sumo_internal:wakeup(DocName, NewDoc),
-      sumo_event:dispatch(DocName, EventName, [Ret]),
-      Ret;
-    Error -> throw(Error)
+  % EventName = case maps:get(IdField, DocMap, undefined) of
+  %               undefined -> created;
+  %               _ -> updated
+  %             end,
+  case maps:get(IdField, DocMap, undefined) of 
+  undefined -> %% created 
+    EventName = created,
+    Store = sumo_internal:get_store(DocName),
+    case sumo_store:persist(Store, sumo_internal:new_doc(DocName, DocMap)) of
+      {ok, NewDoc} ->
+        Ret = sumo_internal:wakeup(DocName, NewDoc),
+        sumo_event:dispatch(DocName, EventName, [Ret]),
+        Ret;
+      Error -> throw(Error)
+    end;
+  Key -> %% updated
+    EventName = updated,
+    Store = sumo_internal:get_store(DocName),
+    case sumo_store:update(Store, Key, sumo_internal:new_doc(DocName, DocMap)) of
+      {ok, NewDoc} ->
+        Ret = sumo_internal:wakeup(DocName, NewDoc),
+        sumo_event:dispatch(DocName, EventName, [Ret]),
+        Ret;
+      Error -> throw(Error)
+    end
   end.
 
 -spec async_persist(schema_name(), user_doc()) -> ok | {error, term()}.
 async_persist(DocName, State) ->
-  % IdField = sumo_internal:id_field_name(DocName),
+  IdField = sumo_internal:id_field_name(DocName),
   DocMap = DocName:sumo_sleep(State),
-  Store = sumo_internal:get_store(DocName),
-  sumo_store:async_persist(Store, sumo_internal:new_doc(DocName, DocMap)).
+  case maps:get(IdField, DocMap, undefined) of 
+  undefined -> %% create
+    Store = sumo_internal:get_store(DocName),
+    sumo_store:async_persist(Store, sumo_internal:new_doc(DocName, DocMap));
+  Key -> %% update
+    Store = sumo_internal:get_store(DocName),
+    sumo_store:async_update(Store, Key, sumo_internal:new_doc(DocName, DocMap))
+  end. 
 
 %% @doc Deletes all docs of type DocName.
 -spec delete_all(schema_name()) -> non_neg_integer().

@@ -1,6 +1,5 @@
 -module(sumo_store_opts).
 
-%% Options of mod_cluster. Uses internal compilation for more fast access.
 
 %% API
 -export([
@@ -10,15 +9,18 @@
 
 -define(TEMP_MODULE, sumo_store_opts_data).
 
+-spec init(list()) -> ok.
 init(Opts) ->
 	term_compiler:compile(?TEMP_MODULE, [
 		{ get, { list, Opts }},
 		{ get_all, {term, Opts}}
 	]).
 
+-spec get_key(atom()) -> term().
 get_key(Key) ->
 	?TEMP_MODULE:get(Key).
 
+-spec get_all() -> list().
 get_all() ->
 	?TEMP_MODULE:get_all().
 

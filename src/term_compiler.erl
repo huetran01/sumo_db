@@ -7,12 +7,14 @@
 	delete/1
 ]).
 
+-spec is_loaded(atom()) -> boolean().
 is_loaded(Module) ->
 	case code:is_loaded(Module) of
 		{ file, _ } -> true;
 		false -> false
 	end.
 
+-spec compile_if_not(atom(), list()) -> term().
 compile_if_not(Module, FunPair) ->
 	case is_loaded(Module) of
 		true -> already_compiled;
@@ -20,9 +22,11 @@ compile_if_not(Module, FunPair) ->
 			compile(Module, FunPair)
 	end.
 
+-spec delete(atom()) -> term().
 delete(Module) ->
 	code:delete(Module).
 
+-spec compile(atom(), list()) -> term().
 compile(Module, FunPair) when is_atom(Module) ->
 	Forms = term_to_abstract(Module, FunPair),
 	{ok, Module, Bin} = compile:forms(Forms, [verbose, report_errors]),

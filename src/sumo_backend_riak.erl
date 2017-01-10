@@ -134,6 +134,10 @@ handle_call({persist, Doc, HState, Handler}, _From, Conn = State) ->
   {OkOrError, Reply, _} = Handler:persist(Doc, HState#state{conn = Conn}),
   {reply, {OkOrError, Reply}, State};
 
+handle_call({persist, OldObj, Doc, HState, Handler}, _From, Conn = State) ->
+  {OkOrError, Reply, _} = Handler:persist(OldObj, Doc, HState#state{conn = Conn}),
+  {reply, {OkOrError, Reply}, State};
+
 handle_call({delete_by, DocName, Conditions, HState, Handler}, _From, Conn = State) ->
   {OkOrError, Reply, _} = Handler:delete_by(DocName, Conditions, HState#state{conn = Conn}),
   {reply, {OkOrError, Reply}, State};
