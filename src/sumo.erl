@@ -209,7 +209,7 @@ persist(DocName, State) ->
   Key -> %% updated
     EventName = updated,
     Store = sumo_internal:get_store(DocName),
-    case sumo_store:update(Store, Key, sumo_internal:new_doc(DocName, DocMap)) of
+    case sumo_store:persist(Store, Key, sumo_internal:new_doc(DocName, DocMap)) of
       {ok, NewDoc} ->
         Ret = sumo_internal:wakeup(DocName, NewDoc),
         sumo_event:dispatch(DocName, EventName, [Ret]),
@@ -228,7 +228,7 @@ async_persist(DocName, State) ->
     sumo_store:async_persist(Store, sumo_internal:new_doc(DocName, DocMap));
   Key -> %% update
     Store = sumo_internal:get_store(DocName),
-    sumo_store:async_update(Store, Key, sumo_internal:new_doc(DocName, DocMap))
+    sumo_store:async_persist(Store, Key, sumo_internal:new_doc(DocName, DocMap))
   end. 
 
 %% @doc Deletes all docs of type DocName.

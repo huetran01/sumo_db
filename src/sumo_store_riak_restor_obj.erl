@@ -66,17 +66,15 @@ init(Opts) ->
 
 -spec persist(binary() | riakc_obj:riakc_obj(), sumo_internal:doc(), state()) -> 
                           sumo_store:result(sumo_internal:doc(), state()).
-
+%% update object
+%% object get from solr search, so do not have metadata
+%% refetch object from riak with key and then update 
 persist(<<>>, Doc, #state{conn = Conn, bucket = Bucket, put_opts = _Opts} = State) ->
   {IdField, Id} = get_id(Doc),
   JsonDoc = doc_to_json(Doc),
   ObjectData =  case riakc_pb_socket:get(Conn, Bucket, sumo_util:to_bin(Id)) of 
   {ok, OldObj} -> 
-    UpdateObject = riakc_obj:update_value(OldObj, JsonDoc),
-    lager:info("OldObj: ~p",[OldObj]),
-    lager:info("NewJsonDoc: ~p",[JsonDoc]),
-    lager:info("UpdateObject: ~p",[UpdateObject]),
-    UpdateObject;
+    riakc_obj:update_value(OldObj, JsonDoc);
   _ -> riakc_obj:new(Bucket, Id, JsonDoc, "application/json")
   end,
   case riakc_pb_socket:put(Conn, ObjectData, [return_body]) of 
@@ -89,13 +87,11 @@ persist(<<>>, Doc, #state{conn = Conn, bucket = Bucket, put_opts = _Opts} = Stat
     {error, unexpected, State}
   end;
 
+%% update object
 persist(OldObj, Doc, #state{conn = Conn,  put_opts = _Opts} = State) ->
   {IdField, _} = get_id(Doc),
   JsonDoc = doc_to_json(Doc),
   ObjectData = riakc_obj:update_value(OldObj, JsonDoc),
-  lager:info("OldObj: ~p",[OldObj]),
-  lager:info("NewJsonDoc: ~p",[JsonDoc]),
-  lager:info("UpdateObject: ~p",[ObjectData]),
   case riakc_pb_socket:put(Conn, ObjectData, [return_body]) of 
   {error, Error} ->
     {error, Error, State};
@@ -109,25 +105,21 @@ persist(OldObj, Doc, #state{conn = Conn,  put_opts = _Opts} = State) ->
 
 -spec persist(sumo_internal:doc(), state()) -> 
                           sumo_store:result(sumo_internal:doc(), state()).
+%% insert object
 persist(Doc,
 	#state{conn = Conn, bucket = Bucket, put_opts = _Opts} = State) ->
   {IdField, Id} = get_id(Doc),
 	JsonDoc = doc_to_json(Doc),
 	ObjectData = riakc_obj:new(Bucket, Id, JsonDoc, "application/json"), 
-  lager:info("JsonDoc: ~p",[JsonDoc]),
-  lager:info("ObjectData: ~p",[ObjectData]),
 	case riakc_pb_socket:put(Conn, ObjectData, [return_body]) of 
 	{error, Error} ->
 		{error, Error, State};
   {ok, RespData} -> 
     Key = riakc_obj:key(RespData),
-    lager:info("SetFields: ~p",[sumo_internal:set_field(IdField, Key, Doc)]),
 		{ok, sumo_internal:set_field(IdField, Key, Doc), State};
   _ ->
     {error, unexpected, State}
 	end.
-
-
 
 
 -spec find_all(
@@ -449,10 +441,8 @@ search_docs_by(DocName, Conn, Index, Query, Limit, Offset) ->
     {MapData, Doc} = kv_to_doc(DocName, KV),
     NewDoc = sumo_internal:new_doc(DocName, get_all_map_from_data(MapData, Doc)),
     [#{doc => NewDoc, obj => <<>>} | Acc]
-    % [NewDoc | Acc] 
     end, 
     NewRes = lists:reverse(lists:foldl(F, [], Results)),
-    % lager:info("NewRes: ~p ~n",[NewRes]),
     {ok, {Total, NewRes}};
   {error, Error} ->
     {error, Error}
@@ -465,8 +455,7 @@ search_docs_by(DocName, Conn, Index, Query, SortQuery, Limit, Offset) ->
     F = fun({_, KV}, Acc) ->  
       {MapData, Doc} = kv_to_doc(DocName, KV),
       NewDoc = sumo_internal:new_doc(DocName, get_all_map_from_data(MapData, Doc)),
-      [#{doc => NewDoc, obj => <<>>} | Acc]
-      % [NewDoc | Acc] 
+      [#{doc => NewDoc, obj => <<>>} | Acc] 
     end, 
     NewRes = lists:reverse(lists:foldl(F, [], Results)),
     {ok, {Total, NewRes}};
@@ -477,12 +466,10 @@ search_docs_by(DocName, Conn, Index, Query, SortQuery, Limit, Offset) ->
 search_docs_by(DocName, Conn, Index, Query, Filters, SortQuery, Limit, Offset) ->
   case riakc_pb_socket:search(Conn, Index, Query, [{filter, Filters}, {start, Offset}, {rows, Limit}, {sort, SortQuery}]) of
   {ok, {search_results, Results, _, Total}} ->
-    % F = fun({_, KV}, Acc) -> [kv_to_doc(DocName, KV) | Acc] end,
     F = fun({_, KV}, Acc) ->  
       {MapData, Doc} = kv_to_doc(DocName, KV),
       NewDoc = sumo_internal:new_doc(DocName, get_all_map_from_data(MapData, Doc)),
       [#{doc => NewDoc, obj => <<>>} | Acc]
-      % [NewDoc | Acc] 
     end, 
     NewRes = lists:reverse(lists:foldl(F, [], Results)),
     {ok, {Total, NewRes}};

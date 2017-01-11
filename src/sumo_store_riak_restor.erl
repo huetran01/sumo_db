@@ -9,6 +9,7 @@
 -export([init/1
         ,create_schema/2
         ,persist/2
+        ,persist/3
         ,find_all/2
         ,find_all/5
         ,find_by/3
@@ -75,14 +76,53 @@ init(Opts) ->
                  del_opts = DelOpts},
   {ok, State}.
 
+
+-spec persist(binary() | riakc_map:crdt_map(), sumo_internal:doc(), state()) -> 
+                          sumo_store:result(sumo_internal:doc(), state()).
+
+%% update object
+%% object get from solr search, so do not have metadata
+%% refetch object from riak with key and then update 
+persist(<<>>, Doc, #state{conn = Conn, bucket = Bucket, put_opts = Opts} = State) ->
+  {Id, NewDoc} = new_doc(Doc, State),
+  case fetch_map(Conn, Bucket, sumo_util:to_bin(Id), Opts) of 
+  {ok, OldObj} -> 
+    DocRMap = doc_to_rmap(NewDoc, OldObj),
+    lager:info("update: OldObj: ~p",[OldObj]),
+    lager:info("update: DocRMap: ~p",[DocRMap]),
+    case update_map(Conn, Bucket, Id, DocRMap, Opts) of 
+    {error, Error} ->
+      {error, Error, State};
+    _ ->
+      {ok, Doc, State}
+    end;
+  {error, Error} ->
+    {error, Error, State}
+  end;
+
+%% update object which fetch from riak
+persist(OldObj, Doc, #state{conn = Conn, bucket = Bucket,  put_opts = Opts} = State) ->
+  {Id, NewDoc} = new_doc(Doc, State),
+  DocRMap = doc_to_rmap(NewDoc, OldObj),
+  lager:info("update: OldObj: ~p",[OldObj]),
+  lager:info("update: DocRMap: ~p",[DocRMap]),
+  case update_map(Conn, Bucket, Id, DocRMap , Opts) of 
+    {error, Error} ->
+      {error, Error, State};
+    _ ->
+      {ok, NewDoc, State}
+  end.
+
 -spec persist(
   sumo_internal:doc(), state()
 ) -> sumo_store:result(sumo_internal:doc(), state()).
+%% insert object
 persist(Doc,
     #state{conn = Conn, bucket = Bucket, put_opts = Opts} = State) ->
   {Id, NewDoc} = new_doc(Doc, State),
-  % case sumo_store_riak:update_map(Conn, Bucket, Id, doc_to_rmap(NewDoc), Opts) of
-  case update_map(Conn, Bucket, Id, doc_to_rmap(NewDoc), Opts) of 
+  DocRMap = doc_to_rmap(NewDoc, riakc_map:new()),
+  lager:info("create: DocRMap: ~p",[DocRMap]),
+  case update_map(Conn, Bucket, Id, DocRMap, Opts) of 
     {error, Error} ->
       {error, Error, State};
     _ ->
@@ -204,7 +244,8 @@ search_by_key(DocName, Conn, Bucket, Key, Opts, State) ->
    case fetch_map(Conn, Bucket, sumo_util:to_bin(Key), Opts) of 
     {ok, RMap} ->
       Val = rmap_to_doc(DocName, RMap),
-      {ok, [Val], State};
+      % {ok, [Val], State};
+      {ok, [#{doc => Val, obj => RMap}], State};
     {error, {notfound, _}} ->
       {ok, [], State};
     {error, Error} ->
@@ -274,10 +315,14 @@ delete_by_index(DocName, Conn, Index, Bucket, Conditions, Opts, State) ->
 
 
 %% utility 
--spec doc_to_rmap(sumo_internal:doc()) -> riakc_map:crdt_map().
-doc_to_rmap(Doc) ->
+-spec doc_to_rmap(sumo_internal:doc(), riakc_map:crdt_map()) -> riakc_map:crdt_map().
+doc_to_rmap(Doc, InitObjMap) ->
   Fields = sumo_internal:doc_fields(Doc),
-  map_to_rmap(Fields).
+  map_to_rmap(Fields, InitObjMap).
+
+-spec map_to_rmap(map(), riakc_map:crdt_map()) -> riakc_map:crdt_map().
+map_to_rmap(Map, InitObjMap) ->
+  lists:foldl(fun rmap_update/2, InitObjMap, maps:to_list(Map)).
 
 -spec map_to_rmap(map()) -> riakc_map:crdt_map().
 map_to_rmap(Map) ->
@@ -352,8 +397,10 @@ rmap_update({K, V}, RMap) ->
 search_docs_by(DocName, Conn, Index, Query, Limit, Offset) ->
  case riakc_pb_socket:search(Conn, Index, Query, [{start, Offset}, {rows, Limit}]) of
     {ok, {search_results, Results, _, Total}} ->
-      % lager:info("Result: ~p~n",[Results]),
-      F = fun({_, KV}, Acc) -> [kv_to_doc(DocName, KV) | Acc] end,
+      F = fun({_, KV}, Acc) -> 
+        NewDoc = kv_to_doc(DocName, KV),
+        [#{doc => NewDoc, obj => <<>>} | Acc] 
+      end,
       NewRes = lists:reverse(lists:foldl(F, [], Results)),
       {ok, {Total, NewRes}};
     {error, Error} ->
@@ -364,7 +411,10 @@ search_docs_by(DocName, Conn, Index, Query, Limit, Offset) ->
 search_docs_by(DocName, Conn, Index, Query, SortQuery, Limit, Offset) ->
   case riakc_pb_socket:search(Conn, Index, Query, [{start, Offset}, {rows, Limit}, {sort, SortQuery}]) of
     {ok, {search_results, Results, _, Total}} ->
-      F = fun({_, KV}, Acc) -> [kv_to_doc(DocName, KV) | Acc] end,
+      F = fun({_, KV}, Acc) -> 
+        NewDoc = kv_to_doc(DocName, KV),
+        [#{doc => NewDoc, obj => <<>>} | Acc] 
+      end,
       NewRes = lists:reverse(lists:foldl(F, [], Results)),
       {ok, {Total, NewRes}};
     {error, Error} ->
@@ -374,7 +424,10 @@ search_docs_by(DocName, Conn, Index, Query, SortQuery, Limit, Offset) ->
 search_docs_by(DocName, Conn, Index, Query, Filters, SortQuery, Limit, Offset) ->
   case riakc_pb_socket:search(Conn, Index, Query, [{filter, Filters}, {start, Offset}, {rows, Limit}, {sort, SortQuery}]) of
       {ok, {search_results, Results, _, Total}} ->
-      F = fun({_, KV}, Acc) -> [kv_to_doc(DocName, KV) | Acc] end,
+      F = fun({_, KV}, Acc) -> 
+        NewDoc = kv_to_doc(DocName, KV),
+        [#{doc => NewDoc, obj => <<>>} | Acc] 
+      end,
       NewRes = lists:reverse(lists:foldl(F, [], Results)),
       {ok, {Total, NewRes}};
     {error, Error} ->
@@ -388,13 +441,6 @@ search_docs_by(DocName, Conn, Index, Query, Filters, SortQuery, Limit, Offset) -
   ok | {ok, Key::binary()} | {ok, riakc_datatype:datatype()} |
   {ok, Key::binary(), riakc_datatype:datatype()} | {error, term()}.
 update_map(Conn, Bucket, Key, Map, Opts) ->
-  lager:info("Bucket: ~p",[Bucket]),
-  lager:info("Key: ~p",[Key]),
-  {map, Info1, Info2, Info3, MetaDa} = Map,
-  lager:info("Info1: ~p",[Info1]),
-  lager:info("Info2: ~p",[Info2]),
-  lager:info("Info3: ~p",[Info3]),
-  lager:info("MetaDa: ~p",[MetaDa]),
   riakc_pb_socket:update_type(Conn, Bucket, Key, riakc_map:to_op(Map), Opts).
 
 
@@ -507,14 +553,14 @@ doc_id(Doc) ->
 %   Vals.
 
 
-%% @private
+% @private
 new_doc(Doc, #state{conn = Conn, bucket = Bucket, put_opts = Opts}) ->
   DocName = sumo_internal:doc_name(Doc),
   IdField = sumo_internal:id_field_name(DocName),
   Id = case sumo_internal:get_field(IdField, Doc) of
      undefined ->
        % case sumo_store_riak:update_map(Conn, Bucket, undefined, doc_to_rmap(Doc), Opts) of
-      case  update_map(Conn, Bucket, undefined, doc_to_rmap(Doc), Opts) of 
+      case  update_map(Conn, Bucket, undefined, doc_to_rmap(Doc, riakc_map:new()), Opts) of 
        {ok, RiakMapId} -> RiakMapId;
        {error, Error}  -> throw(Error);
        _               -> throw(unexpected)

@@ -32,7 +32,7 @@
 % -export([start_link/3]).
 -export([start_link/1]).
 -export([create_schema/2]).
--export([persist/2, async_persist/2, update/3, async_update/3]).
+-export([persist/2, async_persist/2, persist/3, async_persist/3]).
 -export([delete_by/3, async_delete_by/3, delete_all/2, async_delete_all/2]).
 -export([find_all/2, find_all/5, find_by/3, find_by/5, find_by/6, find_by/7]).
 -export([call/4]).
@@ -123,10 +123,10 @@ persist(Name, Doc) ->
     {error, Reason}
   end. 
 
--spec update(
+-spec persist(
   atom(), binary(), sumo_internal:doc()
 ) -> {ok, sumo_internal:doc()} | {error, term()}.
-update(Name, Key, Doc) ->
+persist(Name, Key, Doc) ->
   case get_state(Name) of 
   #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
     case  get(Key) of 
@@ -150,8 +150,8 @@ async_persist(Name, Doc) ->
     {error, Reason}
   end.
 
--spec async_update(atom(), binary(), sumo_internal:doc()) -> ok.
-async_update(Name, Key, Doc) ->
+-spec async_persist(atom(), binary(), sumo_internal:doc()) -> ok.
+async_persist(Name, Key, Doc) ->
   case get_state(Name) of 
   #state{handler = Handler, handler_state = HState}  ->
     case get(Key) of 
