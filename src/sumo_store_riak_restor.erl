@@ -29,6 +29,12 @@
         put_opts :: put_options(),
         del_opts :: delete_options()}).
 
+%% record is the same with record map of riakc_map
+-record(map, {value = [] :: [{key(), term()}],  %% orddict
+              updates = [] :: [{key(), riakc_datatype:datatype()}] , %% orddict
+              removes = [] :: ordsets:ordset({binary(), map}), 
+              context = undefined :: riakc_datatype:context() }).
+
 -type state() :: #state{}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -88,8 +94,6 @@ persist(<<>>, Doc, #state{conn = Conn, bucket = Bucket, put_opts = Opts} = State
   case fetch_map(Conn, Bucket, sumo_util:to_bin(Id), Opts) of 
   {ok, OldObj} -> 
     DocRMap = doc_to_rmap(NewDoc, OldObj),
-    lager:info("update: OldObj: ~p",[OldObj]),
-    lager:info("update: DocRMap: ~p",[DocRMap]),
     case update_map(Conn, Bucket, Id, DocRMap, Opts) of 
     {error, Error} ->
       {error, Error, State};
@@ -104,8 +108,6 @@ persist(<<>>, Doc, #state{conn = Conn, bucket = Bucket, put_opts = Opts} = State
 persist(OldObj, Doc, #state{conn = Conn, bucket = Bucket,  put_opts = Opts} = State) ->
   {Id, NewDoc} = new_doc(Doc, State),
   DocRMap = doc_to_rmap(NewDoc, OldObj),
-  lager:info("update: OldObj: ~p",[OldObj]),
-  lager:info("update: DocRMap: ~p",[DocRMap]),
   case update_map(Conn, Bucket, Id, DocRMap , Opts) of 
     {error, Error} ->
       {error, Error, State};
@@ -121,7 +123,6 @@ persist(Doc,
     #state{conn = Conn, bucket = Bucket, put_opts = Opts} = State) ->
   {Id, NewDoc} = new_doc(Doc, State),
   DocRMap = doc_to_rmap(NewDoc, riakc_map:new()),
-  lager:info("create: DocRMap: ~p",[DocRMap]),
   case update_map(Conn, Bucket, Id, DocRMap, Opts) of 
     {error, Error} ->
       {error, Error, State};
@@ -322,11 +323,13 @@ doc_to_rmap(Doc, InitObjMap) ->
 
 -spec map_to_rmap(map(), riakc_map:crdt_map()) -> riakc_map:crdt_map().
 map_to_rmap(Map, InitObjMap) ->
-  lists:foldl(fun rmap_update/2, InitObjMap, maps:to_list(Map)).
+  RMap = lists:foldl(fun rmap_update/2, riakc_map:new(), maps:to_list(Map)),
+  InitObjMap#map{updates = RMap#map.updates}.
 
 -spec map_to_rmap(map()) -> riakc_map:crdt_map().
 map_to_rmap(Map) ->
   lists:foldl(fun rmap_update/2, riakc_map:new(), maps:to_list(Map)).
+
 
 
 rmap_to_doc(DocName, RMap) ->
