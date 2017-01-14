@@ -192,6 +192,12 @@ handle_cast({persist, Doc, HState, Handler}, Conn = State) ->
   lager:debug("sumo: asyn_persist: Doc: ~p,  Reply: ~p ~n",[Doc, Reply]),
   {noreply, State};
 
+handle_cast({persist, OldObj, Doc, HState, Handler}, Conn = State) ->
+  {_OkOrError, Reply, _} = Handler:persist(OldObj, Doc, HState#state{conn = Conn}),
+  lager:debug("sumo: asyn_persist: Doc: ~p, Reply: ~p",[Doc, Reply]),
+  {noreply, State};
+
+
 handle_cast({delete_by, DocName, Conditions, HState, Handler}, Conn = State) ->
   {_OkOrError, Reply, _} = Handler:delete_by(DocName, Conditions, HState#state{conn = Conn}),
   %% TODO: next : should call event here 
