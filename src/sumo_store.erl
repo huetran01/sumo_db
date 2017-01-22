@@ -249,7 +249,6 @@ find_by(Name, DocName, Conditions) ->
   case get_state(Name) of 
   #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
     Reply = wpool:call(?READ, {find_by, DocName, Conditions, HState, Handler}, ?STRATEGY, Timeout),
-    lager:info("Reply: ~p",[Reply]),
     handle_reply(DocName, Reply);
     % handle_find_by(DocName, Conditions, State);
   Reason ->
@@ -267,7 +266,6 @@ find_by(Name, DocName, Conditions, Limit, Offset) ->
   case get_state(Name) of 
   #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
     Reply = wpool:call(?READ, {find_by, DocName, Conditions, Limit, Offset, HState, Handler}, ?STRATEGY, Timeout),
-    lager:info("Reply: ~p",[Reply]),
     handle_reply(DocName, Reply);
   Reason ->
     {error, Reason}
@@ -284,7 +282,6 @@ find_by(Name, DocName, Conditions, SortFields, Limit, Offset) ->
   case get_state(Name) of 
   #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
     Reply= wpool:call(?READ, {find_by, DocName, Conditions, SortFields, Limit, Offset, HState, Handler}, ?STRATEGY, Timeout),
-    lager:info("Reply: ~p",[Reply]),
     handle_reply(DocName, Reply);
   Reason ->
     {error, Reason}
@@ -298,7 +295,6 @@ find_by(Name, DocName, Conditions, Filter, SortFields, Limit, Offset) ->
   case get_state(Name) of 
   #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
     Reply = wpool:call(?READ, {find_by, DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler}, ?STRATEGY, Timeout),
-    lager:info("Reply: ~p",[Reply]),
     handle_reply(DocName, Reply);
   Reason ->
     {error, Reason}

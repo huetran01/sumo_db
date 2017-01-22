@@ -210,10 +210,12 @@ delete_by(DocName, Conditions,
   IdField = sumo_internal:id_field_name(DocName),
   case Conditions of 
   [{IdField, Key}] -> 
-        delete_by_key(Conn, Bucket, Key, Opts, State);
+
+    delete_by_key(Conn, Bucket, Key, Opts, State);
 
   _ ->
-        delete_by_index(DocName, Conn, Index, Bucket, Conditions, Opts, State)
+
+    delete_by_index(DocName, Conn, Index, Bucket, Conditions, Opts, State)
   end;
 
 delete_by(DocName, Conditions,
@@ -241,7 +243,6 @@ delete_all(_DocName,
 %% public 
 
 search_by_key(DocName, Conn, Bucket, Key, Opts, State) ->
-   %case sumo_store_riak:fetch_map(Conn, Bucket, sumo_util:to_bin(Key), Opts) of
    case fetch_map(Conn, Bucket, sumo_util:to_bin(Key), Opts) of 
     {ok, RMap} ->
       Val = rmap_to_doc(DocName, RMap),
@@ -292,7 +293,6 @@ search_by_index(DocName, Conn, Index, Conditions, Filters, SortFields, Limit, Of
   end.
 
 delete_by_key(Conn, Bucket, Key, Opts, State) -> 
-   % case sumo_store_riak:delete_map(Conn, Bucket, sumo_util:to_bin(Key), Opts) of
    case delete_map(Conn, Bucket, sumo_util:to_bin(Key), Opts) of 
     ok ->
       {ok, 1, State};
@@ -300,14 +300,19 @@ delete_by_key(Conn, Bucket, Key, Opts, State) ->
       {error, Error, State}
     end.
 
-delete_by_index(DocName, Conn, Index, Bucket, Conditions, Opts, State) ->
+
+delete_by_index(_DocName, Conn, Index, Bucket, Conditions, Opts, State) ->
     Query = sumo_util:build_query(Conditions),
-    case search_docs_by(DocName, Conn, Index, Query, ?LIMIT, 0) of
-    {ok, {Total, Res}}  ->
-      delete_docs(Conn, Bucket, Res, Opts),
-      {ok, Total, State};
-    {error, Error} ->
-      {error, Error, State}
+    case riakc_pb_socket:search(Conn, Index, Query, [{start, 0}, {rows, ?LIMIT}]) of 
+    {ok, {search_results, Results, _, Total}} ->
+        Fun = fun({_, Obj}) ->
+          Key = proplists:get_value(<<"_yz_rk">>, Obj),
+          riakc_pb_socket:delete(Conn, Bucket, sumo_util:to_bin(Key), Opts)
+        end, 
+        lists:foreach(Fun, Results),
+        {ok, Total, State};
+    {error, _Error} = Err -> 
+        Err
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -348,7 +353,6 @@ rmap_to_map(RMap) ->
 
 fetch_docs(DocName, Conn, Bucket, Keys, Opts) ->
   Fun = fun(K, Acc) ->
-          %case sumo_store_riak:fetch_map(Conn, Bucket, K, Opts) of
           case fetch_map(Conn, Bucket, K, Opts) of 
             {ok, M} ->
               [rmap_to_doc(DocName, M) | Acc];
@@ -534,19 +538,19 @@ normalize_doc_fields(Src) ->
 
 
 %% @private
-delete_docs(Conn, Bucket, Docs, Opts) ->
-  F = fun(D) ->
-    K = doc_id(D),
-    % sumo_store_riak:delete_map(Conn, Bucket, K, Opts)
-    delete_map(Conn, Bucket, K, Opts)
-    end,
-  lists:foreach(F, Docs).
+% delete_docs(Conn, Bucket, Docs, Opts) ->
+%   F = fun(D) ->
+%     K = doc_id(D),
+%     % sumo_store_riak:delete_map(Conn, Bucket, K, Opts)
+%     delete_map(Conn, Bucket, K, Opts)
+%     end,
+%   lists:foreach(F, Docs).
 
 %% @private
-doc_id(Doc) ->
-  DocName = sumo_internal:doc_name(Doc),
-  IdField = sumo_internal:id_field_name(DocName),
-  sumo_internal:get_field(IdField, Doc).
+% doc_id(Doc) ->
+%   DocName = sumo_internal:doc_name(Doc),
+%   IdField = sumo_internal:id_field_name(DocName),
+%   sumo_internal:get_field(IdField, Doc).
   
 
 

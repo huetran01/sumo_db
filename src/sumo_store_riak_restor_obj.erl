@@ -190,7 +190,6 @@ delete_by(DocName, Conditions,
 		 bucket = Bucket,
 		 index = Index,
 		 del_opts = Opts} = State) when is_list(Conditions) ->
-
 	IdField = sumo_internal:id_field_name(DocName),
   case Conditions of 
   [{IdField, Key}] -> 
@@ -199,25 +198,30 @@ delete_by(DocName, Conditions,
 
 	_ ->
 
-		sumo_store_riak_restor:delete_by_index(DocName, Conn, Index, Bucket, Conditions, Opts, State)
+		delete_by_index(DocName, Conn, Index, Bucket, Conditions, Opts, State)
 
 	end;
 
 
-delete_by(DocName, Conditions, #state{conn = Conn,
-		 bucket = Bucket,
-		 index = Index,
+delete_by(DocName, Conditions, #state{conn = Conn, bucket = Bucket, index = Index,
 		 del_opts = Opts} = State) ->
-	
-	sumo_store_riak_restor:delete_by_index(DocName, Conn, Index, Bucket, Conditions, Opts, State).
+	delete_by_index(DocName, Conn, Index, Bucket, Conditions, Opts, State).
 
 
 -spec delete_all(
   sumo:schema_name(), state()
 ) -> sumo_store:result(sumo_store:affected_rows(), state()).
-delete_all(DocName,
-           #state{conn = _Conn, bucket = _Bucket, del_opts = _Opts} = State) ->
-  sumo_store_riak_restor:delete_all(DocName, State).
+delete_all(_DocName,
+           #state{conn = Conn, bucket = Bucket, del_opts = Opts} = State) ->
+  Del = fun(Kst, Acc) ->
+    lists:foreach(fun(K) ->  riakc_pb_socket:delete(Conn, Bucket, sumo_util:to_bin(K), Opts) end, Kst),
+    Acc + length(Kst)
+  end,
+  case stream_keys(Conn, Bucket, Del, 0) of
+    {ok, Count} -> {ok, Count, State};
+    {_, Count}  -> {error, Count, State}
+  end.
+
 
 %% private
 
@@ -283,6 +287,22 @@ delete_by_key(Conn, Bucket, Key, _Opts, State) ->
     {error, Error} ->
       {error, Error, State}
     end.
+
+delete_by_index(_DocName, Conn, Index, Bucket, Conditions, Opts, State) ->
+    Query = sumo_util:build_query(Conditions),
+    case riakc_pb_socket:search(Conn, Index, Query, [{start, 0}, {rows, ?LIMIT}]) of 
+    {ok, {search_results, Results, _, Total}} ->
+        Fun = fun({_, Obj}) ->
+          Key = proplists:get_value(<<"_yz_rk">>, Obj),
+          riakc_pb_socket:delete(Conn, Bucket, sumo_util:to_bin(Key), Opts)
+        end, 
+        lists:foreach(Fun, Results),
+        {ok, Total, State};
+    {error, _Error} = Err -> 
+        Err
+    end.
+
+
 
 fetch_docs(DocName, Conn, Bucket, Keys, Opts) ->
 	Fun = fun(K, Acc) ->
