@@ -319,18 +319,20 @@ lists:foldl(Fun, [], Keys).
 
 %% @private
 stream_keys(Conn, Bucket, F, Acc) ->
-  {ok, Ref} = riakc_pb_socket:get_index_eq(
-    Conn, Bucket, <<"$bucket">>, <<"">>, [{stream, true}]),
-  	receive_stream(Ref, F, Acc).
+  % {ok, Ref} = riakc_pb_socket:get_index_eq(
+  %   Conn, Bucket, <<"$bucket">>, <<"">>, [{stream, true}]),
+  {ok, Ref} = riakc_pb_socket:stream_list_keys(Conn, Bucket),
+  receive_stream(Ref, F, Acc).
 
 %% @private
 receive_stream(Ref, F, Acc) ->
   receive
-    {Ref, {_, Stream, _}} ->
+    {Ref, {_, Stream}} ->
       receive_stream(Ref, F, F(Stream, Acc));
-    {Ref, {done, _}} ->
+    {Ref, done} -> 
       {ok, Acc};
-    _ ->
+    Error ->
+      lager:error("sumo_db: stream_keys error: ~p",[Error]),
       {error, Acc}
   after
     30000 -> {timeout, Acc}
