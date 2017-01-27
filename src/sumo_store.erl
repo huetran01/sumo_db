@@ -234,7 +234,8 @@ find_all(Name, DocName) ->
 find_all(Name, DocName, SortFields, Limit, Offset) ->
   case get_state(Name) of 
   #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
-    wpool:call(?READ, {find_all, DocName, SortFields, Limit, Offset, HState, Handler}, ?STRATEGY, Timeout);
+    Reply = wpool:call(?READ, {find_all, DocName, SortFields, Limit, Offset, HState, Handler}, ?STRATEGY, Timeout),
+    handle_reply(DocName, Reply);
   Reason ->
     {error, Reason}
   end.

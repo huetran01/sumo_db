@@ -91,17 +91,16 @@ init(Opts) ->
 %% refetch object from riak with key and then update 
 persist(<<>>, Doc, #state{conn = Conn, bucket = Bucket, put_opts = Opts} = State) ->
   {Id, NewDoc} = new_doc(Doc, State),
-  case fetch_map(Conn, Bucket, sumo_util:to_bin(Id), Opts) of 
-  {ok, OldObj} -> 
-    DocRMap = doc_to_rmap(NewDoc, OldObj),
-    case update_map(Conn, Bucket, Id, DocRMap, Opts) of 
-    {error, Error} ->
-      {error, Error, State};
-    _ ->
-      {ok, Doc, State}
-    end;
+  InitObj = case fetch_map(Conn, Bucket, sumo_util:to_bin(Id), Opts) of 
+  {ok, OldObj} -> OldObj;
+  _ -> riakc_map:new()
+  end,
+  DocRMap = doc_to_rmap(NewDoc, InitObj),
+  case update_map(Conn, Bucket, Id, DocRMap, Opts) of 
   {error, Error} ->
-    {error, Error, State}
+    {error, Error, State};
+  _ ->
+    {ok, NewDoc, State}
   end;
 
 %% update object which fetch from riak
