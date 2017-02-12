@@ -172,7 +172,7 @@ async_persist(Name, Key, Doc) ->
 delete_by(Name, DocName, Conditions) ->
   case get_state(Name) of 
   #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
-    wpool:call(?WRITE, {delete_by, DocName, Conditions, HState, Handler}, ?STRATEGY, Timeout);
+    wpool:call(?WRITE, {delete_by, DocName, Conditions, HState, Handler}, ?STRATEGY, infinity);
   Reason ->
     {error, Reason}
   end. 
@@ -194,7 +194,7 @@ async_delete_by(Name, DocName, Conditions) ->
 delete_all(Name, DocName) ->
   case get_state(Name) of 
    #state{handler = Handler, handler_state = HState, timeout = Timeout}  ->
-    wpool:call(?WRITE, {delete_all, DocName, HState, Handler}, ?STRATEGY, Timeout);
+    wpool:call(?WRITE, {delete_all, DocName, HState, Handler}, ?STRATEGY, infinity);
   Reason ->
     {error, Reason}
   end.
