@@ -29,12 +29,6 @@
         put_opts :: put_options(),
         del_opts :: delete_options()}).
 
-%% record is the same with record map of riakc_map
--record(map, {value = [] :: [{key(), term()}],  %% orddict
-              updates = [] :: [{key(), riakc_datatype:datatype()}] , %% orddict
-              removes = [] :: ordsets:ordset({binary(), map}), 
-              context = undefined :: riakc_datatype:context() }).
-
 -type state() :: #state{}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -327,8 +321,8 @@ doc_to_rmap(Doc, InitObjMap) ->
 
 -spec map_to_rmap(map(), riakc_map:crdt_map()) -> riakc_map:crdt_map().
 map_to_rmap(Map, InitObjMap) ->
-  RMap = lists:foldl(fun rmap_update/2, riakc_map:new(), maps:to_list(Map)),
-  InitObjMap#map{updates = RMap#map.updates}.
+  % RMap = lists:foldl(fun rmap_update/2, riakc_map:new(), maps:to_list(Map)),
+  lists:foldl(fun rmap_update/2, InitObjMap, maps:to_list(Map)).
 
 -spec map_to_rmap(map()) -> riakc_map:crdt_map().
 map_to_rmap(Map) ->
@@ -364,12 +358,20 @@ fetch_docs(DocName, Conn, Bucket, Keys, Opts) ->
 %% @private
 list_to_rset(_, [], Acc) ->
   Acc;
-list_to_rset(K, [H | T], Acc) ->
-  M = riakc_map:update(
-    {sumo_util:to_bin(K), set},
-    fun(S) -> riakc_set:add_element(sumo_util:to_bin(H), S) end,
-    Acc),
-  list_to_rset(K, T, M).
+list_to_rset(KeySet, [H | T], Acc) ->
+  M = riakc_map:update(KeySet, fun(S) -> riakc_set:add_element(sumo_util:to_bin(H), S) 
+  end, Acc),
+  list_to_rset(KeySet, T, M).
+
+delete_key_rset(KeySet, RMap) ->
+  case riakc_map:find(KeySet, RMap) of 
+    {ok, OldValues} ->
+        lists:foldl(fun(OldV, MapAcc) -> 
+          riakc_map:update(KeySet, 
+            fun(S) -> riakc_set:del_element(OldV, S) end, MapAcc)
+        end, RMap, OldValues);
+    _ -> RMap
+  end.
 
 %% @private
 rmap_update({K, V}, RMap) when is_map(V) ->
@@ -383,14 +385,18 @@ rmap_update({K, V}, RMap) when is_list(V) ->
         fun(R) -> riakc_register:set(sumo_util:to_bin(V), R) end,
         RMap);
     false ->
-      list_to_rset(K, V, RMap)
+      KeySet = {sumo_util:to_bin(K), set},
+      NewRMap = delete_key_rset(KeySet, RMap),
+      list_to_rset(KeySet, V, NewRMap)
   end;
 
 rmap_update({K, V}, RMap) ->
   case sumo_util:suffix(K) of 
   true ->  %% Key with suffix "_arr", defaut store with set
-    riakc_map:update({sumo_util:to_bin(K), set}, 
-          fun(R) -> riakc_set:add_element(sumo_util:to_bin(V), R) end, RMap) ;
+    KeySet = {sumo_util:to_bin(K), set},
+    NewRMap = delete_key_rset(KeySet, RMap),
+    riakc_map:update(KeySet, fun(R) -> riakc_set:add_element(sumo_util:to_bin(V), R) 
+                    end, NewRMap) ;
   _ ->
     riakc_map:update(
     {sumo_util:to_bin(K), register},
