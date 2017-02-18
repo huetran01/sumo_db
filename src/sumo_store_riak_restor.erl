@@ -387,7 +387,7 @@ rmap_update({K, V}, RMap) when is_list(V) ->
     false ->
       KeySet = {sumo_util:to_bin(K), set},
       NewRMap = delete_key_rset(KeySet, RMap),
-      list_to_rset(KeySet, V, NewRMap)
+      list_to_rset(KeySet, lists:reverse(V), NewRMap)
   end;
 
 rmap_update({K, V}, RMap) ->
