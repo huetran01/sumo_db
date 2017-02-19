@@ -19,6 +19,8 @@
         ,delete_by/3
         ,delete_all/2]).
 
+-export([kv_to_doc/1]).
+
 -record(state, {conn     :: connection(),
         bucket   :: bucket(),
         index    :: index(),
@@ -352,16 +354,21 @@ normalize_doc_fields(Src) ->
 
 kv_to_doc(KV) ->
 	F = fun({K, [H|_] = V}, Acc) when is_tuple(H)  ->
+          %% each element of V is tuple()
 	        NK = sumo_util:to_atom(normalize_doc_fields(K)),
 	       	NV = kv_to_doc(V) ,
 	       	maps:put(NK, NV, Acc);
-	    ({K, [H | _] = V}, Acc) when is_list(H) ->
-	    	NK = sumo_util:to_atom(normalize_doc_fields(K)),
+	    ({K, [ [{_SubK, _SubV} | _]| _] = V}, Acc) ->
+        %% each element of V is [tuple()]
+        NK = sumo_util:to_atom(normalize_doc_fields(K)),
 	    	NV = lists:map(fun(VEl) -> kv_to_doc(VEl) end, V),
 	    	maps:put(NK, NV, Acc);
 	    ({K, V}, Acc) ->
 	    	NK = sumo_util:to_atom(normalize_doc_fields(K)),
-	    	maps:put(NK, V, Acc)
+	    	maps:put(NK, V, Acc);
+      (Other, Acc) ->
+        lager:error("Can not decode to KV: ~p",[Other]),
+        Acc
 	    end,
 	lists:foldl(F, #{}, KV).
 
@@ -417,7 +424,7 @@ update_field({K, V}) when is_list(V) ->
 						[]
 				end,
 		NewSet = if SetEls /= [] ->
-						[{<<BinKey/binary, "_set">>, SetEls}] ;
+						[{<<BinKey/binary, "_set">>, lists:reverse(SetEls)}] ;
 					true ->
 						[]
 				end,  
