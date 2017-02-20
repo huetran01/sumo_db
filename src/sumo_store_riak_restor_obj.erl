@@ -508,7 +508,7 @@ search_docs_by(DocName, Conn, Index, Query, Filters, SortQuery, Limit, Offset) -
 
 % @private
 %% process normal field 
-%% and seperate map field toprocess later
+%% and seperate map field to process later
 kv_to_doc(_DocName, KV) ->
   F = 
   fun({K, V}, {Acc, Doc})  ->
@@ -537,9 +537,9 @@ update_map(K, V, Doc) ->
   none ->
     maps:put(K, V, Doc) ;
   [_H | _] = Values ->
-    maps:put(K, [V | Values], Doc) ;
+    maps:put(K, Values ++ [V], Doc) ;
   Value ->
-    maps:put(K, [V, Value], Doc)
+    maps:put(K, [Value, V], Doc)
   end. 
 
 %% @private
