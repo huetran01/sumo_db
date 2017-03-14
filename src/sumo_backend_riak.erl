@@ -126,8 +126,13 @@ init(Options) ->
   _ReadPoolSize = proplists:get_value(read_pool_size, Options, 50),
   TimeoutRead = proplists:get_value(timeout_read, Options,  ?TIMEOUT_GENERAL),
   TimeoutWrite = proplists:get_value(timeout_write, Options, ?TIMEOUT_GENERAL),
+<<<<<<< HEAD
   TimeoutMapReduce = proplists:get_value(timeout_mapreduce, Options, ?TIMEOUT_GENERAL),
   AutoReconnect = proplists:get_value(auto_reconnect, Options, true),
+=======
+  TimeoutMapReduce = proplists:get_value(timeout_mapreduce,  Options, ?TIMEOUT_GENERAL),
+  AutoReconnect = proplists:get_value(auto_reconnect, Options,  true),
+>>>>>>> 6c568b74e322a62e844fb95d31c8a0651c55b0b7
   Opts = riak_opts(Options),
   State = #modstate{host = Host, port = Port, opts = Opts, timeout_read = TimeoutRead,
 			timeout_write = TimeoutWrite, timeout_mapreduce = TimeoutMapReduce,
@@ -150,6 +155,10 @@ init(Options) ->
 
 create_schema(Schema, HState, Handler) ->
 	wpool:call(?WRITE, {create_schema, Schema, HState, Handler}).
+<<<<<<< HEAD
+=======
+
+>>>>>>> 6c568b74e322a62e844fb95d31c8a0651c55b0b7
 
 persist( Doc, HState, Handler) ->
   Conn = get_riak_conn(?WRITE),
@@ -284,9 +293,16 @@ handle_call(get_conn_info, _From, State = #modstate{conn = Conn}) ->
 %   {OkOrError, Reply, _} = erlang:apply(Handler, Function, RealArgs),
 %   {reply, {OkOrError, Reply}, State};
 
+<<<<<<< HEAD
 handle_call({create_schema, Schema, HState, Handler}, From, #modstate{worker_handler = HandlerPid} = State) ->
 		HandlerPid ! {create_schema, From, Schema, HState, Handler},
 		{reply, ok, State};
+=======
+
+handle_call({create_schema, Schema, HState, Handler}, From, #modstate{worker_handler = HandlerPid} = State) ->
+	HandlerPid ! {create_schema, From, Schema, HState, Handler},
+	{noreply, State};
+>>>>>>> 6c568b74e322a62e844fb95d31c8a0651c55b0b7
 
 handle_call({find_key, function, Fun}, From, #modstate{worker_handler = HandlerPid} = State) ->
 	HandlerPid ! {find_key, From, {function, Fun}},
@@ -375,10 +391,19 @@ work_loop(State) ->
 			work_loop(State);
 		{find_key, Caller, {function, Fun}} ->
 			Fun(Conn),
+<<<<<<< HEAD
 			work_loop(State);
 		{create_schema, Caller,  Schema, HState, Handler} ->
 			handle_create_schema(Schema, HState#state{conn =Conn} , Handler),
 			work_loop(State);
+=======
+			gen_server:reply(Caller, ok),
+			work_loop(State);
+		{create_schema, Caller,  Schema, HState, Handler} ->
+			Result = handle_create_schema(Schema, HState#state{conn =Conn} , Handler),
+			gen_server:reply(Caller, Result);
+			work_loop(State);
+>>>>>>> 6c568b74e322a62e844fb95d31c8a0651c55b0b7
 		{'EXIT', _From, _Reason} ->
 			ok;
 		_ ->
@@ -401,6 +426,10 @@ handle_create_schema(Schema, HState, Handler) ->
 		{ok, NewState_} -> {ok, NewState_};
 		{error, Error, NewState_} -> {{error, Error}, NewState_}
 	end.
+<<<<<<< HEAD
+=======
+
+>>>>>>> 6c568b74e322a62e844fb95d31c8a0651c55b0b7
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% gen_server stuff.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
