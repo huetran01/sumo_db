@@ -124,10 +124,10 @@ init(Options) ->
   PoolSize = proplists:get_value(poolsize, Options, 50),
   WritePoolSize = proplists:get_value(write_pool_size, Options, PoolSize),
   _ReadPoolSize = proplists:get_value(read_pool_size, Options, 50),
-  TimeoutRead = proplists:get_value(timeout_read, ?TIMEOUT_GENERAL),
-  TimeoutWrite = proplists:get_value(timeout_write, ?TIMEOUT_GENERAL),
-  TimeoutMapReduce = proplists:get_value(timeout_mapreduce, ?TIMEOUT_GENERAL),
-  AutoReconnect = proplists:get_value(auto_reconnect, true),
+  TimeoutRead = proplists:get_value(timeout_read, Options,  ?TIMEOUT_GENERAL),
+  TimeoutWrite = proplists:get_value(timeout_write, Options, ?TIMEOUT_GENERAL),
+  TimeoutMapReduce = proplists:get_value(timeout_mapreduce,  Options, ?TIMEOUT_GENERAL),
+  AutoReconnect = proplists:get_value(auto_reconnect, Options,  true),
   Opts = riak_opts(Options),
   State = #modstate{host = Host, port = Port, opts = Opts, timeout_read = TimeoutRead,
 			timeout_write = TimeoutWrite, timeout_mapreduce = TimeoutMapReduce,
@@ -149,12 +149,7 @@ init(Options) ->
 %%%
 
 create_schema(Schema, HState, Handler) ->
-  Conn = get_riak_conn(?WRITE),
-  {Result, _} = case Handler:create_schema(Schema, HState#state{conn = Conn}) of
-	{ok, NewState_} -> {ok, NewState_};
-	{error, Error, NewState_} -> {{error, Error}, NewState_}
-  end,
-  Result.
+	wpool:call(?WRITE, {create_schema, Schema, HState, Handler}).
 
 
 persist( Doc, HState, Handler) ->
@@ -290,6 +285,11 @@ handle_call(get_conn_info, _From, State = #modstate{conn = Conn}) ->
 %   {OkOrError, Reply, _} = erlang:apply(Handler, Function, RealArgs),
 %   {reply, {OkOrError, Reply}, State};
 
+
+handle_call({create_schema, Schema, HState, Handler}, From, #modstate{worker_handler = HandlerPid} = State) ->
+	HandlerPid ! {create_schema, From, Schema, HState, Handler},
+	{noreply, State};
+
 handle_call({find_key, function, Fun}, From, #modstate{worker_handler = HandlerPid} = State) ->
 	HandlerPid ! {find_key, From, {function, Fun}},
 	{noreply, State};
@@ -364,6 +364,7 @@ worker_init(State) ->
 
 
 work_loop(State) ->
+	Conn = State#modstate.conn,
 	receive
 		{init_conn, Caller} ->
 			case connection(State) of 
@@ -376,10 +377,13 @@ work_loop(State) ->
 			end,
 			work_loop(State);
 		{find_key, Caller, {function, Fun}} ->
-			Fun(State#modstate.conn),
+			Fun(Conn),
 			gen_server:reply(Caller, ok),
 			work_loop(State);
-
+		{create_schema, Caller,  Schema, HState, Handler} ->
+			Result = handle_create_schema(Schema, HState#state{conn =Conn} , Handler),
+			gen_server:reply(Caller, Result);
+			work_loop(State);
 		{'EXIT', _From, _Reason} ->
 			ok;
 		_ ->
@@ -396,6 +400,13 @@ connection(#modstate{host = Host, port = Port, auto_reconnect = AutoReconnect} =
 					  [Host, Port, Reason]),
 	  {error, Reason}
   end.
+
+handle_create_schema(Schema, HState, Handler) ->
+	case Handler:create_schema(Schema, HState) of
+		{ok, NewState_} -> {ok, NewState_};
+		{error, Error, NewState_} -> {{error, Error}, NewState_}
+	end.
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% gen_server stuff.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
