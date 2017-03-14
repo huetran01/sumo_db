@@ -76,11 +76,11 @@
 				opts :: [term()],
 				pool_name :: binary(),
 				conn :: connection(),
-				worker_handler :: pid(),
-				timeout_read,
-				timeout_write,
-				timeout_mapreduce,
-				auto_reconnect}).
+				worker_handler :: pid(), 
+				timeout_read :: integer(),
+				timeout_write :: integer(),
+				timeout_mapreduce :: integer(),
+				auto_reconnect :: boolean()}).
 
 -record(state, {conn :: connection(),
 		bucket   :: bucket(),
@@ -109,8 +109,7 @@ get_connection(Name) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -spec init([term()]) -> {ok, pid()}.
-init([undefined, #modstate{host = Host, port = Port, opts = Opts, 
-						pool_name= PoolName, auto_reconnect = AutoReconnect} = State]) ->
+init([undefined, State]) ->
   
   % {ok, Conn} = riakc_pb_socket:start_link(Host, Port, [{auto_reconnect, AutoReconnect}]),
   % ets:insert(sumo_pool, {PoolName, Conn}),
@@ -124,7 +123,7 @@ init(Options) ->
   Port = proplists:get_value(port, Options, 8087),
   PoolSize = proplists:get_value(poolsize, Options, 50),
   WritePoolSize = proplists:get_value(write_pool_size, Options, PoolSize),
-  ReadPoolSize = proplists:get_value(read_pool_size, Options, 50),
+  _ReadPoolSize = proplists:get_value(read_pool_size, Options, 50),
   TimeoutRead = proplists:get_value(timeout_read, ?TIMEOUT_GENERAL),
   TimeoutWrite = proplists:get_value(timeout_write, ?TIMEOUT_GENERAL),
   TimeoutMapReduce = proplists:get_value(timeout_mapreduce, ?TIMEOUT_GENERAL),
@@ -300,8 +299,8 @@ handle_call(test_ok, _From,#modstate{worker_handler = HandlerPid} = State) ->
 
 handle_call(test_crash, _From, #modstate{conn = Conn} = State) ->
   %% do something forced process died 
-  A = 1, 
-  A = 2 
+  % A = 1, 
+  % A = 2 ,
   {reply, Conn, State};
 
 handle_call(_Msg, _From, State) ->
@@ -342,7 +341,7 @@ handle_cast(_Msg, State) -> {noreply, State}.
 handle_info(connected, State) ->
 	{noreply, State};
 
-handle_info({fail_init_conn, Why}, State) ->
+handle_info({fail_init_conn, _Why}, State) ->
 	{stop, normal, State };
 
 handle_info(_Msg, State) -> {noreply, State}.
@@ -377,11 +376,11 @@ work_loop(State) ->
 			end,
 			work_loop(State);
 		{find_key, Caller, {function, Fun}} ->
-			Fun(),
+			Fun(State#modstate.conn),
 			gen_server:reply(Caller, ok),
 			work_loop(State);
 
-		{'EXIT', From, Reason} ->
+		{'EXIT', _From, _Reason} ->
 			ok;
 		_ ->
 			work_loop(State)
@@ -394,7 +393,7 @@ connection(#modstate{host = Host, port = Port, auto_reconnect = AutoReconnect} =
 	  {ok, State#modstate{conn = Pid}};
 	{error, Reason} ->
 	  lager:error("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
-					  [Host, Port, Reason])
+					  [Host, Port, Reason]),
 	  {error, Reason}
   end.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
