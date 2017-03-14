@@ -30,34 +30,34 @@
 
 %%% Public API.
 -export([get_connection/1,
-    get_conn_info/1,
-    pool_name/1,
-    statistic/1]).
+	get_conn_info/1,
+	pool_name/1,
+	statistic/1]).
 
 %%% Exports for sumo_backend
 -export([start_link/2]).
 
 %%% Exports for gen_server
 -export([ init/1
-        , handle_call/3
-        , handle_cast/2
-        , handle_info/2
-        , terminate/2
-        , code_change/3
-        ]).
+		, handle_call/3
+		, handle_cast/2
+		, handle_info/2
+		, terminate/2
+		, code_change/3
+		]).
 
 -export([create_schema/3
-        ,persist/3
-        ,persist/4
-        ,delete_by/4
-        ,delete_all/3
-        ,find_all/3
-        ,find_all/6
-        ,find_by/4
-        ,find_by/6
-        ,find_by/7
-        ,find_by/8
-        ,call/5]).
+		,persist/3
+		,persist/4
+		,delete_by/4
+		,delete_all/3
+		,find_all/3
+		,find_all/6
+		,find_by/4
+		,find_by/6
+		,find_by/7
+		,find_by/8
+		,call/5]).
 
 %% Debug
 -export([get_riak_conn/1]).
@@ -72,17 +72,22 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -record(modstate, {host :: string(),
-                port :: non_neg_integer(),
-                opts :: [term()],
-                pool_name :: binary(),
-                conn :: connection()}).
+				port :: non_neg_integer(),
+				opts :: [term()],
+				pool_name :: binary(),
+				conn :: connection(),
+				worker_handler :: pid(),
+				timeout_read,
+				timeout_write,
+				timeout_mapreduce,
+				auto_reconnect}).
 
 -record(state, {conn :: connection(),
-        bucket   :: bucket(),
-        index    :: index(),
-        get_opts :: get_options(),
-        put_opts :: put_options(),
-        del_opts :: delete_options()}).
+		bucket   :: bucket(),
+		index    :: index(),
+		get_opts :: get_options(),
+		put_opts :: put_options(),
+		del_opts :: delete_options()}).
 
 -type state() :: #modstate{}.
 
@@ -105,10 +110,13 @@ get_connection(Name) ->
 
 -spec init([term()]) -> {ok, pid()}.
 init([undefined, #modstate{host = Host, port = Port, opts = Opts, 
-                        pool_name= PoolName} = State]) ->
-  {ok, Conn} = riakc_pb_socket:start_link(Host, Port, Opts),
-  ets:insert(sumo_pool, {PoolName, Conn}),
-  {ok, State#modstate{conn = Conn}};
+						pool_name= PoolName, auto_reconnect = AutoReconnect} = State]) ->
+  
+  % {ok, Conn} = riakc_pb_socket:start_link(Host, Port, [{auto_reconnect, AutoReconnect}]),
+  % ets:insert(sumo_pool, {PoolName, Conn}),
+  HandlerPid = spawn_link(fun() -> worker_init(State) end),
+  HandlerPid ! {init_conn, self()},
+  {ok, State#modstate{worker_handler = HandlerPid}};
 
 init(Options) ->
   %% Get connection parameters
@@ -117,20 +125,25 @@ init(Options) ->
   PoolSize = proplists:get_value(poolsize, Options, 50),
   WritePoolSize = proplists:get_value(write_pool_size, Options, PoolSize),
   ReadPoolSize = proplists:get_value(read_pool_size, Options, 50),
+  TimeoutRead = proplists:get_value(timeout_read, ?TIMEOUT_GENERAL),
+  TimeoutWrite = proplists:get_value(timeout_write, ?TIMEOUT_GENERAL),
+  TimeoutMapReduce = proplists:get_value(timeout_mapreduce, ?TIMEOUT_GENERAL),
+  AutoReconnect = proplists:get_value(auto_reconnect, true),
   Opts = riak_opts(Options),
+  State = #modstate{host = Host, port = Port, opts = Opts, timeout_read = TimeoutRead,
+			timeout_write = TimeoutWrite, timeout_mapreduce = TimeoutMapReduce,
+			auto_reconnect = AutoReconnect},
   WritePoolOptions    = [ {overrun_warning, 10000}
-                    , {overrun_handler, {sumo_internal, report_overrun}}
-                    , {workers, WritePoolSize}
-                    , {worker, {?MODULE, [undefined, #modstate{host = Host, port = Port, 
-                                      opts = Opts, pool_name = ?WRITE}]}}],
-  ReadPoolOptions    = [ {overrun_warning, 10000}
-                    , {overrun_handler, {sumo_internal, report_overrun}}
-                    , {workers, ReadPoolSize}
-                    , {worker, {?MODULE, [undefined, #modstate{host = Host, port = Port, 
-                                        opts = Opts, pool_name = ?READ}]}}],
-  ets:new(sumo_pool, [named_table, bag, public, {write_concurrency, true}, {read_concurrency, true}]),
+					, {overrun_handler, {sumo_internal, report_overrun}}
+					, {workers, WritePoolSize}
+					, {worker, {?MODULE, [undefined, State#modstate{pool_name = ?WRITE}]}}],
+  % ReadPoolOptions    = [ {overrun_warning, 10000}
+		% 			, {overrun_handler, {sumo_internal, report_overrun}}
+		% 			, {workers, ReadPoolSize}
+		% 			, {worker, {?MODULE, [undefined, State#modstate{pool_name = ?READ}]}}],
+  % ets:new(sumo_pool, [named_table, bag, public, {write_concurrency, true}, {read_concurrency, true}]),
   wpool:start_pool(?WRITE, WritePoolOptions),
-  wpool:start_pool(?READ, ReadPoolOptions),
+  % wpool:start_pool(?READ, ReadPoolOptions),
   {ok, #modstate{host = Host, port = Port, opts = Opts}}.
 
 %%%
@@ -139,8 +152,8 @@ init(Options) ->
 create_schema(Schema, HState, Handler) ->
   Conn = get_riak_conn(?WRITE),
   {Result, _} = case Handler:create_schema(Schema, HState#state{conn = Conn}) of
-    {ok, NewState_} -> {ok, NewState_};
-    {error, Error, NewState_} -> {{error, Error}, NewState_}
+	{ok, NewState_} -> {ok, NewState_};
+	{error, Error, NewState_} -> {{error, Error}, NewState_}
   end,
   Result.
 
@@ -167,40 +180,40 @@ delete_all(DocName, HState, Handler) ->
   {OkOrError, Reply}.
 
 find_all(DocName, HState, Handler) ->
-  Conn = get_riak_conn(?READ),
+  Conn = get_riak_conn(?WRITE),
   {OkOrError, Reply, _} = Handler:find_all(DocName, HState#state{conn = Conn}),
   {OkOrError, Reply}.
 
 find_all(DocName, SortFields, Limit, Offset, HState, Handler) ->
-  Conn = get_riak_conn(?READ),
+  Conn = get_riak_conn(?WRITE),
   {OkOrError, Reply, _} = Handler:find_all(DocName, SortFields, Limit, Offset, HState#state{conn = Conn}),
   {OkOrError, Reply}.
 
 
 find_by(DocName, Conditions, HState, Handler) ->
-  Conn = get_riak_conn(?READ),
+  Conn = get_riak_conn(?WRITE),
   {OkOrError, Reply, _} = Handler:find_by(DocName, Conditions, HState#state{conn = Conn}),
   {OkOrError, Reply}.
 
 find_by(DocName, Conditions, Limit, Offset, HState, Handler) ->
-  Conn = get_riak_conn(?READ),
+  Conn = get_riak_conn(?WRITE),
   {OkOrError, Reply, _} = Handler:find_by(DocName, Conditions, Limit, Offset, HState#state{conn = Conn}),
   {OkOrError, Reply}.
 
 find_by(DocName, Conditions, SortFields, Limit, Offset, HState, Handler) ->
-  Conn = get_riak_conn(?READ),
+  Conn = get_riak_conn(?WRITE),
   {OkOrError, Reply, _} = Handler:find_by(DocName, Conditions, SortFields, Limit, Offset, HState#state{conn = Conn}),
   {OkOrError, Reply}.
 
 
 find_by(DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler) ->
-  Conn = get_riak_conn(?READ),
+  Conn = get_riak_conn(?WRITE),
   {OkOrError, Reply, _} = Handler:find_by(DocName, Conditions, Filter, SortFields, Limit, Offset, HState#state{conn = Conn}),
   {OkOrError, Reply}.
 
 
 call(Handler, Function, Args, DocName, HState) ->
-  Conn = get_riak_conn(?READ),
+  Conn = get_riak_conn(?WRITE),
   RealArgs = lists:append(Args, [DocName, HState#state{conn = Conn}]),
   {OkOrError, Reply, _} = erlang:apply(Handler, Function, RealArgs),
   {OkOrError, Reply}.
@@ -211,7 +224,7 @@ call(Handler, Function, Args, DocName, HState) ->
 %% In other cases is a built-in feature of the client.
 -spec handle_call(term(), term(), state()) -> {reply, term(), state()}.
 handle_call(get_connection, _From, State = #modstate{host = Host, port = Port, 
-                                    opts = Opts, pool_name = PoolName }) ->
+									opts = Opts, pool_name = PoolName }) ->
   {ok, Conn} = riakc_pb_socket:start_link(Host, Port, Opts),
   ets:insert(sumo_pool, {PoolName, Conn}),
   {reply, Conn, State#modstate{conn = Conn}};
@@ -221,6 +234,7 @@ handle_call(get_conn_info, _From, State = #modstate{conn = Conn}) ->
 
 
 %%%------------------------------------
+
 
 % handle_call({create_schema, Schema, HState, Handler}, _From, Conn = State) ->
 %   {Result, _} = case Handler:create_schema(Schema, HState#state{conn = Conn}) of
@@ -277,11 +291,17 @@ handle_call(get_conn_info, _From, State = #modstate{conn = Conn}) ->
 %   {OkOrError, Reply, _} = erlang:apply(Handler, Function, RealArgs),
 %   {reply, {OkOrError, Reply}, State};
 
-handle_call(test_ok, _From,#modstate{conn = Conn} = State) ->
-  {reply, Conn, State};
+handle_call({find_key, function, Fun}, From, #modstate{worker_handler = HandlerPid} = State) ->
+	HandlerPid ! {find_key, From, {function, Fun}},
+	{noreply, State};
+
+handle_call(test_ok, _From,#modstate{worker_handler = HandlerPid} = State) ->
+  {reply, HandlerPid, State};
 
 handle_call(test_crash, _From, #modstate{conn = Conn} = State) ->
   %% do something forced process died 
+  A = 1, 
+  A = 2 
   {reply, Conn, State};
 
 handle_call(_Msg, _From, State) ->
@@ -319,6 +339,12 @@ handle_call(_Msg, _From, State) ->
 handle_cast(_Msg, State) -> {noreply, State}.
 
 -spec handle_info(term(), state()) -> {noreply, state()}.
+handle_info(connected, State) ->
+	{noreply, State};
+
+handle_info({fail_init_conn, Why}, State) ->
+	{stop, normal, State };
+
 handle_info(_Msg, State) -> {noreply, State}.
 
 -spec terminate(term(), state()) -> ok.
@@ -329,7 +355,48 @@ terminate(_Reason, #modstate{pool_name = PoolName, conn = Conn}) ->
 -spec code_change(term(), state(), term()) -> {ok, state()}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% gen_server stuff.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+worker_init(State) ->
+	process_flag(trap_exit, true),
+	work_loop(State).
+
+
+work_loop(State) ->
+	receive
+		{init_conn, Caller} ->
+			case connection(State) of 
+			{ok,  ConnState} ->
+				Caller ! connected,
+				ConnState;
+			Error ->
+				Caller ! {fail_init_conn, Error},
+				State
+			end,
+			work_loop(State);
+		{find_key, Caller, {function, Fun}} ->
+			Fun(),
+			gen_server:reply(Caller, ok),
+			work_loop(State);
+
+		{'EXIT', From, Reason} ->
+			ok;
+		_ ->
+			work_loop(State)
+  end.
+
+
+connection(#modstate{host = Host, port = Port, auto_reconnect = AutoReconnect} = State)  ->
+  case riakc_pb_socket:start_link(Host, Port, [{auto_reconnect, AutoReconnect}]) of 
+	{ok, Pid} ->
+	  {ok, State#modstate{conn = Pid}};
+	{error, Reason} ->
+	  lager:error("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
+					  [Host, Port, Reason])
+	  {error, Reason}
+  end.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% gen_server stuff.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -337,10 +404,10 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 get_riak_conn(PoolName) ->
   case ets:lookup(sumo_pool, PoolName) of 
   [] ->
-    wpool:call(PoolName, get_connection);
+	wpool:call(PoolName, get_connection);
   Pids ->
-    {_, Conn} = lists:nth(erlang:phash(erlang:timestamp(), length(Pids)), Pids),
-    Conn
+	{_, Conn} = lists:nth(erlang:phash(erlang:timestamp(), length(Pids)), Pids),
+	Conn
   end. 
 
 -spec riak_opts([term()]) -> [term()].
@@ -348,13 +415,13 @@ riak_opts(Options) ->
   User = proplists:get_value(username, Options),
   Pass = proplists:get_value(password, Options),
   Opts0 = case User /= undefined andalso Pass /= undefined of
-            true -> [{credentials, User, Pass}];
-            _    -> []
-          end,
+			true -> [{credentials, User, Pass}];
+			_    -> []
+		  end,
   Opts1 = case lists:keyfind(connect_timeout, 1, Options) of
-            {_, V1} -> [{connect_timeout, V1}, {auto_reconnect, true}] ++ Opts0;
-            _       -> [{auto_reconnect, true}] ++ Opts0
-          end,
+			{_, V1} -> [{connect_timeout, V1}, {auto_reconnect, true}] ++ Opts0;
+			_       -> [{auto_reconnect, true}] ++ Opts0
+		  end,
   Opts1.
 
 
@@ -376,12 +443,12 @@ statistic(write) ->
   InitWorkers = Get(workers, InitStats),
   WorkerStatus = 
   [begin
-      WorkerStats = Get(I, InitWorkers),
-      MsgQueueLen = Get(message_queue_len, WorkerStats),
-      Memory = Get(memory, WorkerStats),
-      {status, WorkerStats, MsgQueueLen, Memory}
-    end || I <- lists:seq(1, length(InitWorkers))],
-    [PoolPid, Options, WorkerStatus];
+	  WorkerStats = Get(I, InitWorkers),
+	  MsgQueueLen = Get(message_queue_len, WorkerStats),
+	  Memory = Get(memory, WorkerStats),
+	  {status, WorkerStats, MsgQueueLen, Memory}
+	end || I <- lists:seq(1, length(InitWorkers))],
+	[PoolPid, Options, WorkerStatus];
 
 
 statistic(read) ->
@@ -392,12 +459,12 @@ statistic(read) ->
   InitWorkers = Get(workers, InitStats),
   WorkerStatus = 
   [begin
-      WorkerStats = Get(I, InitWorkers),
-      MsgQueueLen = Get(message_queue_len, WorkerStats),
-      Memory = Get(memory, WorkerStats),
-      {status, WorkerStats, MsgQueueLen, Memory}
-    end || I <- lists:seq(1, length(InitWorkers))],
-    [PoolPid, Options, WorkerStatus];
+	  WorkerStats = Get(I, InitWorkers),
+	  MsgQueueLen = Get(message_queue_len, WorkerStats),
+	  Memory = Get(memory, WorkerStats),
+	  {status, WorkerStats, MsgQueueLen, Memory}
+	end || I <- lists:seq(1, length(InitWorkers))],
+	[PoolPid, Options, WorkerStatus];
 
 statistic(_) ->
   ok.
