@@ -121,18 +121,13 @@ init(Options) ->
   %% Get connection parameters
   Host = proplists:get_value(host, Options, "127.0.0.1"),
   Port = proplists:get_value(port, Options, 8087),
-  PoolSize = proplists:get_value(poolsize, Options, 50),
+  PoolSize = proplists:get_value(poolsize, Options, 100),
   WritePoolSize = proplists:get_value(write_pool_size, Options, PoolSize),
   _ReadPoolSize = proplists:get_value(read_pool_size, Options, 50),
   TimeoutRead = proplists:get_value(timeout_read, Options,  ?TIMEOUT_GENERAL),
   TimeoutWrite = proplists:get_value(timeout_write, Options, ?TIMEOUT_GENERAL),
-<<<<<<< HEAD
   TimeoutMapReduce = proplists:get_value(timeout_mapreduce, Options, ?TIMEOUT_GENERAL),
   AutoReconnect = proplists:get_value(auto_reconnect, Options, true),
-=======
-  TimeoutMapReduce = proplists:get_value(timeout_mapreduce,  Options, ?TIMEOUT_GENERAL),
-  AutoReconnect = proplists:get_value(auto_reconnect, Options,  true),
->>>>>>> 6c568b74e322a62e844fb95d31c8a0651c55b0b7
   Opts = riak_opts(Options),
   State = #modstate{host = Host, port = Port, opts = Opts, timeout_read = TimeoutRead,
 			timeout_write = TimeoutWrite, timeout_mapreduce = TimeoutMapReduce,
@@ -140,13 +135,13 @@ init(Options) ->
   WritePoolOptions    = [ {overrun_warning, 10000}
 					, {overrun_handler, {sumo_internal, report_overrun}}
 					, {workers, WritePoolSize}
-					, {worker, {?MODULE, [undefined, State#modstate{pool_name = ?WRITE}]}}],
+					, {worker, {?MODULE, [undefined, State#modstate{pool_name = ?SUMO_POOL}]}}],
   % ReadPoolOptions    = [ {overrun_warning, 10000}
 		% 			, {overrun_handler, {sumo_internal, report_overrun}}
 		% 			, {workers, ReadPoolSize}
 		% 			, {worker, {?MODULE, [undefined, State#modstate{pool_name = ?READ}]}}],
   % ets:new(sumo_pool, [named_table, bag, public, {write_concurrency, true}, {read_concurrency, true}]),
-  wpool:start_pool(?WRITE, WritePoolOptions),
+  wpool:start_pool(?SUMO_POOL, WritePoolOptions),
   % wpool:start_pool(?READ, ReadPoolOptions),
   {ok, #modstate{host = Host, port = Port, opts = Opts}}.
 
@@ -154,159 +149,58 @@ init(Options) ->
 %%%
 
 create_schema(Schema, HState, Handler) ->
-	wpool:call(?WRITE, {create_schema, Schema, HState, Handler}).
-<<<<<<< HEAD
-=======
-
->>>>>>> 6c568b74e322a62e844fb95d31c8a0651c55b0b7
+	wpool:call(?SUMO_POOL, {create_schema, Schema, HState, Handler}).
 
 persist( Doc, HState, Handler) ->
-  Conn = get_riak_conn(?WRITE),
-  {OkOrError, Reply, _} = Handler:persist(Doc, HState#state{conn = Conn}),
-  {OkOrError, Reply}.
+	wpool:call(?SUMO_POOL, {persist, Doc, HState, Handler}).
+
 
 persist(OldObj, Doc, HState, Handler) ->
-  Conn = get_riak_conn(?WRITE),
-  {OkOrError, Reply, _} = Handler:persist(OldObj, Doc, HState#state{conn = Conn}),
-  {OkOrError, Reply}.
+	wpool:call(?SUMO_POOL, {persist, OldObj, Doc, HState, Handler}).
+
 
 delete_by(DocName, Conditions, HState, Handler) ->
-  Conn = get_riak_conn(?WRITE),
-  {OkOrError, Reply, _} = Handler:delete_by(DocName, Conditions, HState#state{conn = Conn}),
-  {OkOrError, Reply}.
-
+	wpool:call(?SUMO_POOL, {delete_by, DocName, Conditions, HState, Handler}).
 
 delete_all(DocName, HState, Handler) ->
-  Conn = get_riak_conn(?WRITE),
-  {OkOrError, Reply, _} = Handler:delete_all(DocName, HState#state{conn = Conn}),
-  {OkOrError, Reply}.
+	wpool:call(?SUMO_POOL, {delete_all, DocName, HState, Handler}).
 
 find_all(DocName, HState, Handler) ->
-  Conn = get_riak_conn(?WRITE),
-  {OkOrError, Reply, _} = Handler:find_all(DocName, HState#state{conn = Conn}),
-  {OkOrError, Reply}.
+	wpool:call(?SUMO_POOL, {find_all, DocName, HState, Handler}).
 
 find_all(DocName, SortFields, Limit, Offset, HState, Handler) ->
-  Conn = get_riak_conn(?WRITE),
-  {OkOrError, Reply, _} = Handler:find_all(DocName, SortFields, Limit, Offset, HState#state{conn = Conn}),
-  {OkOrError, Reply}.
-
+	wpool:call(?SUMO_POOL, {find_all, DocName, SortFields, Limit, Offset, HState, Handler}).
 
 find_by(DocName, Conditions, HState, Handler) ->
-  Conn = get_riak_conn(?WRITE),
-  {OkOrError, Reply, _} = Handler:find_by(DocName, Conditions, HState#state{conn = Conn}),
-  {OkOrError, Reply}.
+	wpool:call(?SUMO_POOL, {find_by, DocName, Conditions, HState, Handler}).
 
 find_by(DocName, Conditions, Limit, Offset, HState, Handler) ->
-  Conn = get_riak_conn(?WRITE),
-  {OkOrError, Reply, _} = Handler:find_by(DocName, Conditions, Limit, Offset, HState#state{conn = Conn}),
-  {OkOrError, Reply}.
+	wpool:call(?SUMO_POOL,  {find_by, DocName, Conditions, Limit, Offset, HState, Handler}).
 
 find_by(DocName, Conditions, SortFields, Limit, Offset, HState, Handler) ->
-  Conn = get_riak_conn(?WRITE),
-  {OkOrError, Reply, _} = Handler:find_by(DocName, Conditions, SortFields, Limit, Offset, HState#state{conn = Conn}),
-  {OkOrError, Reply}.
-
+	wpool:call(?SUMO_POOL, {find_by, DocName, Conditions, SortFields, Limit, Offset, HState, Handler}).
 
 find_by(DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler) ->
-  Conn = get_riak_conn(?WRITE),
-  {OkOrError, Reply, _} = Handler:find_by(DocName, Conditions, Filter, SortFields, Limit, Offset, HState#state{conn = Conn}),
-  {OkOrError, Reply}.
-
+	wpool:call(?SUMO_POOL, {find_by, DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler}).
 
 call(Handler, Function, Args, DocName, HState) ->
-  Conn = get_riak_conn(?WRITE),
-  RealArgs = lists:append(Args, [DocName, HState#state{conn = Conn}]),
-  {OkOrError, Reply, _} = erlang:apply(Handler, Function, RealArgs),
-  {OkOrError, Reply}.
-
-
+	wpool:call(?SUMO_POOL, {call, Handler, Function, Args, DocName, HState}).
 
 %% @todo: implement connection pool.
 %% In other cases is a built-in feature of the client.
 -spec handle_call(term(), term(), state()) -> {reply, term(), state()}.
-handle_call(get_connection, _From, State = #modstate{host = Host, port = Port, 
-									opts = Opts, pool_name = PoolName }) ->
-  {ok, Conn} = riakc_pb_socket:start_link(Host, Port, Opts),
-  ets:insert(sumo_pool, {PoolName, Conn}),
-  {reply, Conn, State#modstate{conn = Conn}};
+handle_call(get_connection, _From, State = #modstate{host = Host, port = Port, opts = Opts}) ->
+	{ok, Conn} = riakc_pb_socket:start_link(Host, Port, Opts),
+  	{reply, Conn, State};
 
-handle_call(get_conn_info, _From, State = #modstate{conn = Conn}) ->
-  {reply, Conn, State};
+handle_call(get_conn_info, From, State = #modstate{worker_handler = HandlerPid}) ->
+  	HandlerPid ! {get_conn_info, From},
+  	{noreply, State};
 
-
-%%%------------------------------------
-
-
-% handle_call({create_schema, Schema, HState, Handler}, _From, Conn = State) ->
-%   {Result, _} = case Handler:create_schema(Schema, HState#state{conn = Conn}) of
-%   {ok, NewState_} -> {ok, NewState_};
-%   {error, Error, NewState_} -> {{error, Error}, NewState_}
-%   end,
-%   {reply, Result, State};
-
-
-% handle_call({persist, Doc, HState, Handler}, _From, Conn = State) ->
-%   {OkOrError, Reply, _} = Handler:persist(Doc, HState#state{conn = Conn}),
-%   {reply, {OkOrError, Reply}, State};
-
-% handle_call({persist, OldObj, Doc, HState, Handler}, _From, Conn = State) ->
-%   {OkOrError, Reply, _} = Handler:persist(OldObj, Doc, HState#state{conn = Conn}),
-%   {reply, {OkOrError, Reply}, State};
-
-% handle_call({delete_by, DocName, Conditions, HState, Handler}, _From, Conn = State) ->
-%   {OkOrError, Reply, _} = Handler:delete_by(DocName, Conditions, HState#state{conn = Conn}),
-%   {reply, {OkOrError, Reply}, State};
-
-
-% handle_call({delete_all, DocName, HState, Handler}, _From, Conn = State) ->
-%   {OkOrError, Reply, _} = Handler:delete_all(DocName, HState#state{conn = Conn}),
-%   {reply, {OkOrError, Reply}, State};
-
-
-% handle_call({find_all, DocName, HState, Handler}, _From, Conn = State) ->
-%   {OkOrError, Reply, _} = Handler:find_all(DocName, HState#state{conn = Conn}),
-%   {reply, {OkOrError, Reply}, State};
-
-% handle_call({find_all, DocName, SortFields, Limit, Offset, HState, Handler}, _From, Conn = State) ->
-%   {OkOrError, Reply, _} = Handler:find_all(DocName, SortFields, Limit, Offset, HState#state{conn = Conn}),
-%   {reply, {OkOrError, Reply}, State};
-
-% handle_call({find_by, DocName, Conditions, HState, Handler}, _From, Conn = State) ->
-%   {OkOrError, Reply, _} = Handler:find_by(DocName, Conditions, HState#state{conn = Conn}),
-%   {reply, {OkOrError, Reply}, State};
-
-% handle_call({find_by, DocName, Conditions, Limit, Offset, HState, Handler}, _From, Conn = State) ->
-%   {OkOrError, Reply, _} = Handler:find_by(DocName, Conditions, Limit, Offset, HState#state{conn = Conn}),
-%   {reply, {OkOrError, Reply}, State};
-
-% handle_call({find_by, DocName, Conditions, SortFields, Limit, Offset, HState, Handler}, _From, Conn = State) ->
-%   {OkOrError, Reply, _} = Handler:find_by(DocName, Conditions, SortFields, Limit, Offset, HState#state{conn = Conn}),
-%   {reply, {OkOrError, Reply}, State};
-
-% handle_call({find_by, DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler}, _From, Conn = State) ->
-%   {OkOrError, Reply, _} = Handler:find_by(DocName, Conditions, Filter, SortFields, Limit, Offset, HState#state{conn = Conn}),
-%   {reply, {OkOrError, Reply}, State};
-
-% handle_call({call, Handler, Function, Args, DocName, HState}, _From, Conn = State) ->
-%   RealArgs = lists:append(Args, [DocName, HState#state{conn = Conn}]),
-%   {OkOrError, Reply, _} = erlang:apply(Handler, Function, RealArgs),
-%   {reply, {OkOrError, Reply}, State};
-
-<<<<<<< HEAD
-handle_call({create_schema, Schema, HState, Handler}, From, #modstate{worker_handler = HandlerPid} = State) ->
-		HandlerPid ! {create_schema, From, Schema, HState, Handler},
-		{reply, ok, State};
-=======
-
-handle_call({create_schema, Schema, HState, Handler}, From, #modstate{worker_handler = HandlerPid} = State) ->
-	HandlerPid ! {create_schema, From, Schema, HState, Handler},
-	{noreply, State};
->>>>>>> 6c568b74e322a62e844fb95d31c8a0651c55b0b7
 
 handle_call({find_key, function, Fun}, From, #modstate{worker_handler = HandlerPid} = State) ->
 	HandlerPid ! {find_key, From, {function, Fun}},
-	{reply, ok,  State};
+	{noreply, State};
 
 handle_call(test_ok, _From,#modstate{worker_handler = HandlerPid} = State) ->
   {reply, HandlerPid, State};
@@ -317,42 +211,65 @@ handle_call(test_crash, _From, #modstate{conn = Conn} = State) ->
   % A = 2 ,
   {reply, Conn, State};
 
+handle_call({create_schema, Schema, HState, Handler}, From, #modstate{worker_handler = HandlerPid} = State) ->
+	HandlerPid ! {create_schema, From, Schema, HState, Handler},
+	{noreply, State};
+
+handle_call({persist, Doc, HState, Handler}, From, #modstate{worker_handler = HandlerPid} = State) ->
+	HandlerPid ! {persist, From, Doc, HState, Handler},
+	{noreply, State};
+
+handle_call({persist, OldObj, Doc, HState, Handler}, From, #modstate{worker_handler = HandlerPid} = State) ->
+	HandlerPid ! {persist, From, OldObj, Doc, HState, Handler},
+	{noreply, State};
+
+handle_call({delete_by, DocName, Conditions, HState, Handler}, From, #modstate{worker_handler = HandlerPid} = State) ->
+	HandlerPid ! {delete_by, From, DocName, Conditions, HState, Handler},
+	{noreply, State};
+
+handle_call({delete_all, DocName, HState, Handler}, From, #modstate{worker_handler = HandlerPid} = State) ->
+	HandlerPid ! {delete_all, From, DocName, HState, Handler},
+	{noreply, State};
+
+handle_call({find_all, DocName, HState, Handler}, From, #modstate{worker_handler = HandlerPid} = State) ->
+	HandlerPid ! {find_all, From, DocName, HState, Handler},
+	{noreply, State};
+
+handle_call({find_all, DocName, SortFields, Limit, Offset, HState, Handler}, From, #modstate{worker_handler = HandlerPid} = State) ->
+	HandlerPid ! {find_all, From, DocName, SortFields, Limit, Offset, HState, Handler},
+	{noreply, State};
+
+handle_call({find_by, DocName, Conditions, HState, Handler}, From, #modstate{worker_handler = HandlerPid} = State) ->
+	HandlerPid ! {find_by, From, DocName, Conditions, HState, Handler},
+	{noreply, State};
+
+handle_call({find_by, DocName, Conditions, Limit, Offset, HState, Handler}, From, #modstate{worker_handler = HandlerPid} = State) ->
+	HandlerPid ! {find_by, From, DocName, Conditions, Limit, Offset, HState, Handler},
+	{noreply, State};
+
+handle_call({find_by, DocName, Conditions, SortFields, Limit, Offset, HState, Handler}, From, #modstate{worker_handler = HandlerPid} = State) ->
+	HandlerPid !  {find_by, From, DocName, Conditions, SortFields, Limit, Offset, HState, Handler},
+	{noreply, State};
+
+handle_call({find_by, DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler}, From, #modstate{worker_handler = HandlerPid} = State) ->
+	HandlerPid !  {find_by, From, DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler},
+	{noreply, State};
+
+handle_call({call, Handler, Function, Args, DocName, HState}, From, #modstate{worker_handler = HandlerPid} = State) ->
+	HandlerPid ! {call, From,  Handler, Function, Args, DocName, HState},
+	{noreply, State};
+
+
 handle_call(_Msg, _From, State) ->
   {reply, ok, State}.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Unused Callbacks
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-% handle_cast({persist, Doc, HState, Handler}, Conn = State) ->
-%   {_OkOrError, Reply, _} = Handler:persist(Doc, HState#state{conn = Conn}),
-%   %% TODO next: should call event here
-%   lager:debug("sumo: asyn_persist: Doc: ~p,  Reply: ~p ~n",[Doc, Reply]),
-%   {noreply, State};
-
-% handle_cast({persist, OldObj, Doc, HState, Handler}, Conn = State) ->
-%   {_OkOrError, Reply, _} = Handler:persist(OldObj, Doc, HState#state{conn = Conn}),
-%   lager:debug("sumo: asyn_persist: Doc: ~p, Reply: ~p",[Doc, Reply]),
-%   {noreply, State};
-
-
-% handle_cast({delete_by, DocName, Conditions, HState, Handler}, Conn = State) ->
-%   {_OkOrError, Reply, _} = Handler:delete_by(DocName, Conditions, HState#state{conn = Conn}),
-%   %% TODO: next : should call event here 
-%   lager:debug("sumo: asyn_delete_by: Doc: ~p, Reply: ~p ~n",[DocName, Reply]),
-%   {noreply, State};
-
-% handle_cast({delete_all, DocName, HState, Handler}, Conn = State) ->
-%   {_OkOrError, Reply, _} = Handler:delete_all(DocName, HState#state{conn = Conn}),
-%   %% TODO: next: should call event here
-%   lager:debug("sumo: async_delete_all: Doc: ~p, Reply: ~p ~n",[DocName, Reply]),
-%   {noreply, State};
 
 -spec handle_cast(term(), state()) -> {noreply, state()}.
 handle_cast(_Msg, State) -> {noreply, State}.
 
 -spec handle_info(term(), state()) -> {noreply, state()}.
-handle_info(connected, State) ->
+handle_info({connected, Conn}, State) ->
+	lager:debug("sumo: connected: ~p", [Conn]),
 	{noreply, State};
 
 handle_info({fail_init_conn, _Why}, State) ->
@@ -380,30 +297,109 @@ work_loop(State) ->
 	Conn = State#modstate.conn,
 	receive
 		{init_conn, Caller} ->
-			case connection(State) of 
+			NewState = case connection(State) of 
 			{ok,  ConnState} ->
-				Caller ! connected,
+				Caller ! {connected, ConnState#modstate.conn},
 				ConnState;
 			Error ->
 				Caller ! {fail_init_conn, Error},
 				State
 			end,
+			work_loop(NewState);
+		{get_conn_info, Caller} ->
+			gen_server:reply(Caller, Conn),
 			work_loop(State);
 		{find_key, Caller, {function, Fun}} ->
 			Fun(Conn),
-<<<<<<< HEAD
-			work_loop(State);
-		{create_schema, Caller,  Schema, HState, Handler} ->
-			handle_create_schema(Schema, HState#state{conn =Conn} , Handler),
-			work_loop(State);
-=======
 			gen_server:reply(Caller, ok),
 			work_loop(State);
+		
 		{create_schema, Caller,  Schema, HState, Handler} ->
 			Result = handle_create_schema(Schema, HState#state{conn =Conn} , Handler),
-			gen_server:reply(Caller, Result);
+			gen_server:reply(Caller, Result),
 			work_loop(State);
->>>>>>> 6c568b74e322a62e844fb95d31c8a0651c55b0b7
+		
+		{persist, Caller, Doc, HState, Handler} ->
+			Start = os:timestamp(),
+			Result =  handle_persist(Doc, HState#state{conn = Conn}, Handler),
+			ElapseTime = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
+			lager:info("sumo: insert: ElapseTime: ~p",[trunc(ElapseTime/1000)]),
+			gen_server:reply(Caller, Result),
+			work_loop(State);
+		
+		{persist, Caller, OldObj, Doc, HState, Handler} ->
+			Start = os:timestamp(),
+			Result = handle_persist(OldObj, Doc, HState#state{conn = Conn}, Handler),
+			ElapseTime = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
+			lager:info("sumo: update: ElapseTime: ~p",[trunc(ElapseTime/1000)]),
+			gen_server:reply(Caller, Result),
+			work_loop(State);
+		
+		{delete_by, Caller, DocName, Conditions, HState, Handler} ->
+			Start = os:timestamp(),
+			Result =  handle_delete_by(DocName, Conditions, HState#state{conn = Conn}, Handler),
+			ElapseTime = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
+			lager:info("sumo: delete_by: ElapseTime: ~p",[trunc(ElapseTime/1000)]),
+			gen_server:reply(Caller, Result),
+			work_loop(State);
+		
+		{delete_all, Caller, DocName, HState, Handler} ->
+			Start = os:timestamp(),
+			Result = handle_delete_all(DocName, HState#state{conn = Conn}, Handler),
+			ElapseTime = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
+			lager:info("sumo: delete_all: ElapseTime: ~p",[trunc(ElapseTime/1000)]),
+			gen_server:reply(Caller, Result),
+			work_loop(State);
+		
+		{find_all, Caller, DocName, HState, Handler} ->
+			Start = os:timestamp(),
+			Result = handle_find_all(DocName, HState#state{conn = Conn}, Handler),
+			ElapseTime = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
+			lager:info("sumo: find_all: ElapseTime: ~p",[trunc(ElapseTime/1000)]),
+			gen_server:reply(Caller, Result),
+			work_loop(State);
+		
+		{find_all, Caller,  DocName, SortFields, Limit, Offset, HState, Handler} ->
+			Result = handle_find_all(DocName, SortFields, Limit, Offset, HState#state{conn = Conn}, Handler),
+			gen_server:reply(Caller, Result),
+			work_loop(State);
+		
+		{find_by, Caller, DocName, Conditions, HState, Handler} ->
+			Start = os:timestamp(),
+			Result = handle_find_by(DocName, Conditions, HState#state{conn = Conn}, Handler),
+			ElapseTime = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
+			lager:info("sumo: find_by: ElapseTime: ~p",[trunc(ElapseTime/1000)]),
+			gen_server:reply(Caller, Result),
+			work_loop(State);
+		
+		{find_by, Caller, DocName, Conditions, Limit, Offset, HState, Handler} ->
+			Start = os:timestamp(),
+			Result = handle_find_by(DocName, Conditions, Limit, Offset, HState#state{conn = Conn}, Handler),
+			ElapseTime = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
+			lager:info("sumo: find_by: ElapseTime: ~p",[trunc(ElapseTime/1000)]),
+			gen_server:reply(Caller, Result),
+			work_loop(State);
+		
+		{find_by, Caller, DocName, Conditions, SortFields, Limit, Offset, HState, Handler} ->
+			Start = os:timestamp(),
+			Result = handle_find_by(DocName, Conditions, SortFields, Limit, Offset, HState#state{conn = Conn}, Handler),
+			ElapseTime = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
+			lager:info("sumo: find_by: ElapseTime: ~p",[trunc(ElapseTime/1000)]),
+			gen_server:reply(Caller, Result),
+			work_loop(State);
+		
+		{find_by, Caller,  DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler} ->
+			Start = os:timestamp(),
+			Result = handle_find_by( DocName, Conditions, Filter, SortFields, Limit, Offset, HState#state{conn = Conn}, Handler),
+			ElapseTime = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
+			lager:info("sumo: find_by: ElapseTime: ~p",[trunc(ElapseTime/1000)]),
+			gen_server:reply(Caller, Result),
+			work_loop(State);
+
+		{call, Caller, Handler, Function, Args, DocName, HState} ->
+			Result = handle_func_call(Function, Args, DocName, HState#state{conn = Conn}, Handler),
+			gen_server:reply(Caller, Result),
+			work_loop(State);
 		{'EXIT', _From, _Reason} ->
 			ok;
 		_ ->
@@ -423,13 +419,58 @@ connection(#modstate{host = Host, port = Port, auto_reconnect = AutoReconnect} =
 
 handle_create_schema(Schema, HState, Handler) ->
 	case Handler:create_schema(Schema, HState) of
-		{ok, NewState_} -> {ok, NewState_};
-		{error, Error, NewState_} -> {{error, Error}, NewState_}
+		{ok, _NewState} ->  ok;
+		{error, Error, _NewState} -> {error, Error}
 	end.
-<<<<<<< HEAD
-=======
 
->>>>>>> 6c568b74e322a62e844fb95d31c8a0651c55b0b7
+handle_persist(Doc, HState, Handler) ->
+	{OkOrError, Reply, _} = Handler:persist(Doc, HState),
+ 	{OkOrError, Reply}.
+
+handle_persist(OldObj, Doc, HState, Handler) ->
+	{OkOrError, Reply, _} = Handler:persist(OldObj, Doc, HState),
+  	{OkOrError, Reply}.
+
+handle_delete_by(DocName, Conditions, HState, Handler) ->
+	{OkOrError, Reply, _} = Handler:delete_by(DocName, Conditions, HState),
+	{OkOrError, Reply}.
+
+handle_delete_all(DocName, HState, Handler) ->
+	{OkOrError, Reply, _} = Handler:delete_all(DocName, HState),
+ 	{OkOrError, Reply}.
+
+handle_find_all(DocName, HState, Handler) ->
+	{OkOrError, Reply, _} = Handler:find_all(DocName, HState),
+  	{OkOrError, Reply}.
+
+handle_find_all(DocName, SortFields, Limit, Offset, HState, Handler) ->
+  	{OkOrError, Reply, _} = Handler:find_all(DocName, SortFields, Limit, Offset, HState),
+  	{OkOrError, Reply}.
+
+
+handle_find_by(DocName, Conditions, HState, Handler) ->
+ 	{OkOrError, Reply, _} = Handler:find_by(DocName, Conditions, HState),
+ 	{OkOrError, Reply}.
+
+handle_find_by(DocName, Conditions, Limit, Offset, HState, Handler) ->
+	{OkOrError, Reply, _} = Handler:find_by(DocName, Conditions, Limit, Offset, HState),
+  	{OkOrError, Reply}.
+
+
+handle_find_by(DocName, Conditions, SortFields, Limit, Offset, HState, Handler) ->
+	{OkOrError, Reply, _} = Handler:find_by(DocName, Conditions, SortFields, Limit, Offset, HState),
+  	{OkOrError, Reply}.
+
+handle_find_by( DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler) ->
+	{OkOrError, Reply, _} = Handler:find_by(DocName, Conditions, Filter, SortFields, Limit, Offset, HState),
+  	{OkOrError, Reply}.
+
+
+handle_func_call(Function, Args, DocName, HState, Handler) ->
+	RealArgs = lists:append(Args, [DocName, HState]),
+	{OkOrError, Reply, _} = erlang:apply(Handler, Function, RealArgs),
+	{OkOrError, Reply}.
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% gen_server stuff.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -459,7 +500,7 @@ riak_opts(Options) ->
 
 
 get_conn_info(write) ->
-  wpool:call(?WRITE, get_conn_info);
+  wpool:call(?SUMO_POOL, get_conn_info);
 
 get_conn_info(read) -> 
   wpool:call(?READ, get_conn_info);
@@ -470,7 +511,7 @@ get_conn_info(_) ->
 
 statistic(write) ->
   Get = fun proplists:get_value/2,
-  InitStats = ?THROW_TO_ERROR(wpool:stats(?WRITE)),
+  InitStats = ?THROW_TO_ERROR(wpool:stats(?SUMO_POOL)),
   PoolPid = Get(supervisor, InitStats),
   Options = Get(options, InitStats),
   InitWorkers = Get(workers, InitStats),
@@ -502,7 +543,7 @@ statistic(read) ->
 statistic(_) ->
   ok.
 
-pool_name(write) -> ?WRITE;
+pool_name(write) -> ?SUMO_POOL;
 pool_name(read) -> ?READ;
 pool_name(_) -> ok.
 
