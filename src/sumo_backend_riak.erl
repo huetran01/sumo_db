@@ -32,7 +32,8 @@
 -export([get_connection/1,
 	get_conn_info/1,
 	pool_name/1,
-	statistic/1]).
+	statistic/1,
+	default_strategy/0]).
 
 %%% Exports for sumo_backend
 -export([start_link/2]).
@@ -67,8 +68,18 @@
 
 -define(THROW_TO_ERROR(X), try X catch throw:Result -> erlang:raise(error, Result, erlang:get_stacktrace()) end).
 
+-define(Strategy, next_worker).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Types.
+
+-type custom_strategy() :: fun(([atom()])-> Atom::atom()).
+-type strategy() :: best_worker
+								| random_worker
+								| next_worker
+								| available_worker
+								| next_available_worker
+								| {hash_worker, term()}
+								| custom_strategy().
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -record(modstate, {host :: string(),
@@ -111,8 +122,6 @@ get_connection(Name) ->
 -spec init([term()]) -> {ok, pid()}.
 init([undefined, State]) ->
   
-  % {ok, Conn} = riakc_pb_socket:start_link(Host, Port, [{auto_reconnect, AutoReconnect}]),
-  % ets:insert(sumo_pool, {PoolName, Conn}),
   HandlerPid = spawn_link(fun() -> worker_init(State) end),
   HandlerPid ! {init_conn, self()},
   {ok, State#modstate{worker_handler = HandlerPid}};
@@ -123,7 +132,6 @@ init(Options) ->
   Port = proplists:get_value(port, Options, 8087),
   PoolSize = proplists:get_value(poolsize, Options, 100),
   WritePoolSize = proplists:get_value(write_pool_size, Options, PoolSize),
-  _ReadPoolSize = proplists:get_value(read_pool_size, Options, 50),
   TimeoutRead = proplists:get_value(timeout_read, Options,  ?TIMEOUT_GENERAL),
   TimeoutWrite = proplists:get_value(timeout_write, Options, ?TIMEOUT_GENERAL),
   TimeoutMapReduce = proplists:get_value(timeout_mapreduce, Options, ?TIMEOUT_GENERAL),
@@ -136,55 +144,49 @@ init(Options) ->
 					, {overrun_handler, {sumo_internal, report_overrun}}
 					, {workers, WritePoolSize}
 					, {worker, {?MODULE, [undefined, State#modstate{pool_name = ?SUMO_POOL}]}}],
-  % ReadPoolOptions    = [ {overrun_warning, 10000}
-		% 			, {overrun_handler, {sumo_internal, report_overrun}}
-		% 			, {workers, ReadPoolSize}
-		% 			, {worker, {?MODULE, [undefined, State#modstate{pool_name = ?READ}]}}],
-  % ets:new(sumo_pool, [named_table, bag, public, {write_concurrency, true}, {read_concurrency, true}]),
   wpool:start_pool(?SUMO_POOL, WritePoolOptions),
-  % wpool:start_pool(?READ, ReadPoolOptions),
   {ok, #modstate{host = Host, port = Port, opts = Opts}}.
 
 %%%
 %%%
 
 create_schema(Schema, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {create_schema, Schema, HState, Handler}).
+	wpool:call(?SUMO_POOL, {create_schema, Schema, HState, Handler}, default_strategy(), infinity).
 
 persist( Doc, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {persist, Doc, HState, Handler}).
+	wpool:call(?SUMO_POOL, {persist, Doc, HState, Handler}, default_strategy(), infinity).
 
 
 persist(OldObj, Doc, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {persist, OldObj, Doc, HState, Handler}).
+	wpool:call(?SUMO_POOL, {persist, OldObj, Doc, HState, Handler}, default_strategy(), infinity).
 
 
 delete_by(DocName, Conditions, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {delete_by, DocName, Conditions, HState, Handler}).
+	wpool:call(?SUMO_POOL, {delete_by, DocName, Conditions, HState, Handler}, default_strategy(), infinity).
 
 delete_all(DocName, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {delete_all, DocName, HState, Handler}).
+	wpool:call(?SUMO_POOL, {delete_all, DocName, HState, Handler}, default_strategy(), infinity).
 
 find_all(DocName, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {find_all, DocName, HState, Handler}).
+	wpool:call(?SUMO_POOL, {find_all, DocName, HState, Handler}, default_strategy(), infinity).
 
 find_all(DocName, SortFields, Limit, Offset, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {find_all, DocName, SortFields, Limit, Offset, HState, Handler}).
+	wpool:call(?SUMO_POOL, {find_all, DocName, SortFields, Limit, Offset, HState, Handler}, default_strategy(), infinity).
 
 find_by(DocName, Conditions, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {find_by, DocName, Conditions, HState, Handler}).
+	wpool:call(?SUMO_POOL, {find_by, DocName, Conditions, HState, Handler}, default_strategy(), infinity).
 
 find_by(DocName, Conditions, Limit, Offset, HState, Handler) ->
-	wpool:call(?SUMO_POOL,  {find_by, DocName, Conditions, Limit, Offset, HState, Handler}).
+	wpool:call(?SUMO_POOL,  {find_by, DocName, Conditions, Limit, Offset, HState, Handler}, default_strategy(), infinity).
 
 find_by(DocName, Conditions, SortFields, Limit, Offset, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {find_by, DocName, Conditions, SortFields, Limit, Offset, HState, Handler}).
+	wpool:call(?SUMO_POOL, {find_by, DocName, Conditions, SortFields, Limit, Offset, HState, Handler}, default_strategy(), infinity).
 
 find_by(DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {find_by, DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler}).
+	wpool:call(?SUMO_POOL, {find_by, DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler}, default_strategy(), infinity).
 
 call(Handler, Function, Args, DocName, HState) ->
-	wpool:call(?SUMO_POOL, {call, Handler, Function, Args, DocName, HState}).
+	wpool:call(?SUMO_POOL, {call, Handler, Function, Args, DocName, HState}, default_strategy(), infinity).
 
 %% @todo: implement connection pool.
 %% In other cases is a built-in feature of the client.
@@ -279,6 +281,7 @@ handle_info(_Msg, State) -> {noreply, State}.
 
 -spec terminate(term(), state()) -> ok.
 terminate(_Reason, _State) -> 
+	lager:error("sumo: process died",[]),
   ok.
 
 -spec code_change(term(), state(), term()) -> {ok, state()}.
@@ -320,42 +323,27 @@ work_loop(State) ->
 			work_loop(State);
 		
 		{persist, Caller, Doc, HState, Handler} ->
-			Start = os:timestamp(),
 			Result =  handle_persist(Doc, HState#state{conn = Conn}, Handler),
-			ElapseTime = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
-			lager:info("sumo: insert: ElapseTime: ~p",[trunc(ElapseTime/1000)]),
 			gen_server:reply(Caller, Result),
 			work_loop(State);
 		
 		{persist, Caller, OldObj, Doc, HState, Handler} ->
-			Start = os:timestamp(),
 			Result = handle_persist(OldObj, Doc, HState#state{conn = Conn}, Handler),
-			ElapseTime = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
-			lager:info("sumo: update: ElapseTime: ~p",[trunc(ElapseTime/1000)]),
 			gen_server:reply(Caller, Result),
 			work_loop(State);
 		
 		{delete_by, Caller, DocName, Conditions, HState, Handler} ->
-			Start = os:timestamp(),
 			Result =  handle_delete_by(DocName, Conditions, HState#state{conn = Conn}, Handler),
-			ElapseTime = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
-			lager:info("sumo: delete_by: ElapseTime: ~p",[trunc(ElapseTime/1000)]),
 			gen_server:reply(Caller, Result),
 			work_loop(State);
 		
 		{delete_all, Caller, DocName, HState, Handler} ->
-			Start = os:timestamp(),
 			Result = handle_delete_all(DocName, HState#state{conn = Conn}, Handler),
-			ElapseTime = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
-			lager:info("sumo: delete_all: ElapseTime: ~p",[trunc(ElapseTime/1000)]),
 			gen_server:reply(Caller, Result),
 			work_loop(State);
 		
 		{find_all, Caller, DocName, HState, Handler} ->
-			Start = os:timestamp(),
 			Result = handle_find_all(DocName, HState#state{conn = Conn}, Handler),
-			ElapseTime = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
-			lager:info("sumo: find_all: ElapseTime: ~p",[trunc(ElapseTime/1000)]),
 			gen_server:reply(Caller, Result),
 			work_loop(State);
 		
@@ -365,34 +353,22 @@ work_loop(State) ->
 			work_loop(State);
 		
 		{find_by, Caller, DocName, Conditions, HState, Handler} ->
-			Start = os:timestamp(),
 			Result = handle_find_by(DocName, Conditions, HState#state{conn = Conn}, Handler),
-			ElapseTime = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
-			lager:info("sumo: find_by: ElapseTime: ~p",[trunc(ElapseTime/1000)]),
 			gen_server:reply(Caller, Result),
 			work_loop(State);
 		
 		{find_by, Caller, DocName, Conditions, Limit, Offset, HState, Handler} ->
-			Start = os:timestamp(),
 			Result = handle_find_by(DocName, Conditions, Limit, Offset, HState#state{conn = Conn}, Handler),
-			ElapseTime = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
-			lager:info("sumo: find_by: ElapseTime: ~p",[trunc(ElapseTime/1000)]),
 			gen_server:reply(Caller, Result),
 			work_loop(State);
 		
 		{find_by, Caller, DocName, Conditions, SortFields, Limit, Offset, HState, Handler} ->
-			Start = os:timestamp(),
 			Result = handle_find_by(DocName, Conditions, SortFields, Limit, Offset, HState#state{conn = Conn}, Handler),
-			ElapseTime = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
-			lager:info("sumo: find_by: ElapseTime: ~p",[trunc(ElapseTime/1000)]),
 			gen_server:reply(Caller, Result),
 			work_loop(State);
 		
 		{find_by, Caller,  DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler} ->
-			Start = os:timestamp(),
 			Result = handle_find_by( DocName, Conditions, Filter, SortFields, Limit, Offset, HState#state{conn = Conn}, Handler),
-			ElapseTime = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
-			lager:info("sumo: find_by: ElapseTime: ~p",[trunc(ElapseTime/1000)]),
 			gen_server:reply(Caller, Result),
 			work_loop(State);
 
@@ -508,6 +484,12 @@ get_conn_info(read) ->
 get_conn_info(_) ->
   ok.
 
+-spec default_strategy() -> strategy().
+default_strategy() ->
+	case application:get_env(worker_pool, default_strategy) of
+		undefined -> ?Strategy;
+		{ok, Strategy} -> Strategy
+	end.
 
 statistic(write) ->
   Get = fun proplists:get_value/2,
@@ -525,25 +507,9 @@ statistic(write) ->
 	[PoolPid, Options, WorkerStatus];
 
 
-statistic(read) ->
-  Get = fun proplists:get_value/2,
-  InitStats = ?THROW_TO_ERROR(wpool:stats(?READ)),
-  PoolPid = Get(supervisor, InitStats),
-  Options = Get(options, InitStats),
-  InitWorkers = Get(workers, InitStats),
-  WorkerStatus = 
-  [begin
-	  WorkerStats = Get(I, InitWorkers),
-	  MsgQueueLen = Get(message_queue_len, WorkerStats),
-	  Memory = Get(memory, WorkerStats),
-	  {status, WorkerStats, MsgQueueLen, Memory}
-	end || I <- lists:seq(1, length(InitWorkers))],
-	[PoolPid, Options, WorkerStatus];
-
 statistic(_) ->
   ok.
 
 pool_name(write) -> ?SUMO_POOL;
-pool_name(read) -> ?READ;
 pool_name(_) -> ok.
 
