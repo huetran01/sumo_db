@@ -57,9 +57,13 @@ start_link() ->
 
 -spec init(term()) -> init_result().
 init([]) ->
-  {ok, Backends} = application:get_env(sumo_db, storage_backends),
-  Children = lists:map(
-    fun({Name, Module, Options}) -> ?CLD(Name, Module, Options) end,
-    Backends
-  ),
+	Children = case application:get_env(sumo_db, storage_backends) of  
+  {ok, Backends} ->
+  	lists:map(
+    	fun({Name, Module, Options}) -> ?CLD(Name, Module, Options) end,
+    	Backends
+  	);
+	_ ->
+		[]
+	end,
   {ok, { {one_for_one, 5, 10}, Children} }.
