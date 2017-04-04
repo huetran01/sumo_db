@@ -419,7 +419,7 @@ update_field({K, V}) when is_list(V) ->
 	_ ->
 		{SetEls, MapEls} = map_filter(V),
 		NewMaps = if MapEls /= [] ->
-						[{<<BinKey/binary, "_map">>, MapEls}] ;
+						[{<<BinKey/binary, "_map">>, lists:reverse(MapEls)}] ;
 					true ->
 						[]
 				end,
@@ -592,7 +592,7 @@ check_symetric([Key | T], FieldValues) ->
   {length(FilterRes) == length(T), [{Key, get_value(FirstVals)}| NewDatas]}.
 
 
-process_to_collect_map(FieldValues) -> process_to_collect_map(lists:reverse(FieldValues), []) .
+process_to_collect_map(FieldValues) -> process_to_collect_map(FieldValues, []) .
 
 process_to_collect_map([], Acc) -> Acc; 
 
