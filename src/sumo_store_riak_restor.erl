@@ -363,14 +363,20 @@ list_to_rset(KeySet, [H | T], Acc) ->
   end, Acc),
   list_to_rset(KeySet, T, M).
 
-delete_key_rset(KeySet, RMap) ->
+delete_key_rset(_, [], Acc) ->
+  Acc;
+delete_key_rset(KeySet, [H | T], Acc) ->
+  M = riakc_map:update(KeySet, fun(S) -> riakc_set:del_element(sumo_util:to_bin(H), S) 
+  end, Acc),
+  delete_key_rset(KeySet, T, M).
+
+get_key_rset_oldvalues(KeySet, RMap) ->
   case riakc_map:find(KeySet, RMap) of 
-    {ok, OldValues} ->
-        lists:foldl(fun(OldV, MapAcc) -> 
-          riakc_map:update(KeySet, 
-            fun(S) -> riakc_set:del_element(OldV, S) end, MapAcc)
-        end, RMap, OldValues);
-    _ -> RMap
+  {ok, OldValue} when is_binary(OldValue) ->
+      [OldValue] ;
+  {ok, OldValues} when is_list(OldValues) ->
+      OldValues;
+  _ -> []
   end.
 
 %% @private
@@ -386,17 +392,24 @@ rmap_update({K, V}, RMap) when is_list(V) ->
         RMap);
     false ->
       KeySet = {sumo_util:to_bin(K), set},
-      NewRMap = delete_key_rset(KeySet, RMap),
-      list_to_rset(KeySet, lists:reverse(V), NewRMap)
+      OldValues = get_key_rset_oldvalues(KeySet, RMap),
+      RemoveValues = lists:subtract(OldValues, V),
+      NewRMap = delete_key_rset(KeySet, RemoveValues, RMap),
+      list_to_rset(KeySet,  lists:reverse(V), NewRMap)
   end;
 
 rmap_update({K, V}, RMap) ->
   case sumo_util:suffix(K) of 
   true ->  %% Key with suffix "_arr", defaut store with set
+    NewV = case is_binary(V) of 
+      true -> [V] ;
+      _ -> V 
+    end,
     KeySet = {sumo_util:to_bin(K), set},
-    NewRMap = delete_key_rset(KeySet, RMap),
-    riakc_map:update(KeySet, fun(R) -> riakc_set:add_element(sumo_util:to_bin(V), R) 
-                    end, NewRMap) ;
+    OldValues = get_key_rset_oldvalues(KeySet, RMap),
+    RemoveValues = lists:subtract(OldValues, NewV),
+    NewRMap = delete_key_rset(KeySet, RemoveValues, RMap),
+    list_to_rset(KeySet, NewV, NewRMap);
   _ ->
     riakc_map:update(
     {sumo_util:to_bin(K), register},
