@@ -91,9 +91,16 @@ persist(<<>>, Doc, #state{conn = Conn, bucket = Bucket, put_opts = _Opts} = Stat
 
 %% update object
 persist(OldObj, Doc, #state{conn = Conn,  put_opts = _Opts} = State) ->
-  {IdField, _} = get_id(Doc),
-  JsonDoc = doc_to_json(Doc),
-  ObjectData = riakc_obj:update_value(OldObj, JsonDoc),
+  {IdField, Id} = get_id(Doc),
+   JsonDoc = doc_to_json(Doc),
+
+  ObjectData = 
+     case riakc_obj:bucket(OldObj) of
+            Bucket ->
+                  riakc_obj:update_value(OldObj, JsonDoc);
+            _OldBucket ->
+                  riakc_obj:new(Bucket, Id, JsonDoc, "application/json")
+  end,
   case riakc_pb_socket:put(Conn, ObjectData, [return_body]) of 
   {error, Error} ->
     {error, Error, State};
