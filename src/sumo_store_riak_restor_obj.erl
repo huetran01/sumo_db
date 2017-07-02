@@ -90,7 +90,7 @@ persist(<<>>, Doc, #state{conn = Conn, bucket = Bucket, put_opts = _Opts} = Stat
   end;
 
 %% update object
-persist(OldObj, Doc, #state{conn = Conn,  put_opts = _Opts} = State) ->
+persist(OldObj, Doc, #state{conn = Conn,  put_opts = _Opts, bucket = Bucket} = State) ->
   {IdField, Id} = get_id(Doc),
    JsonDoc = doc_to_json(Doc),
 
