@@ -86,6 +86,7 @@
 				port :: non_neg_integer(),
 				opts :: [term()],
 				pool_name :: binary(),
+				parent_pid :: binary(),
 				conn :: connection(),
 				worker_handler :: pid(), 
 				timeout_read :: integer(),
@@ -121,7 +122,7 @@ get_connection(Name) ->
 
 -spec init([term()]) -> {ok, pid()}.
 init([undefined, State]) ->
-  
+  process_flag(trap_exit, true),
   HandlerPid = spawn_link(fun() -> worker_init(State) end),
   HandlerPid ! {init_conn, self()},
   {ok, State#modstate{worker_handler = HandlerPid}};
@@ -277,12 +278,18 @@ handle_info({connected, Conn}, State) ->
 handle_info({fail_init_conn, _Why}, State) ->
 	{stop, normal, State };
 
+handle_info({'EXIT', Pid, Reason}, State) ->
+    lager:error("sumo: worker ~p exited with ~p~n", [Pid, Reason]),
+    %% Worker process exited for some other reason; stop this process
+    %% as well so that everything gets restarted by the sup
+    {stop, normal, State};
+
 handle_info(_Msg, State) -> {noreply, State}.
 
 -spec terminate(term(), state()) -> ok.
 terminate(_Reason, _State) -> 
 	lager:error("sumo: process died",[]),
-  ok.
+  	ok.
 
 -spec code_change(term(), state(), term()) -> {ok, state()}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
@@ -308,9 +315,10 @@ work_loop(State) ->
 				Caller ! {fail_init_conn, Error},
 				State
 			end,
-			work_loop(NewState);
+			work_loop(NewState#modstate{parent_pid = Caller});
 		{get_conn_info, Caller} ->
-			gen_server:reply(Caller, Conn),
+			IsConnected = riakc_pb_socket:is_connected(Conn),
+			gen_server:reply(Caller, {Conn, IsConnected}),
 			work_loop(State);
 		{find_key, Caller, {function, Fun}} ->
 			Fun(Conn),
@@ -376,12 +384,24 @@ work_loop(State) ->
 			Result = handle_func_call(Function, Args, DocName, HState#state{conn = Conn}, Handler),
 			gen_server:reply(Caller, Result),
 			work_loop(State);
-		{'EXIT', _From, _Reason} ->
+
+		{'EXIT', Pid, Reason} ->
+			lager:error("sumo: driver worker ~p exited with ~p~n", [Pid, Reason]),
+			need_shutdown(Pid, State),
 			ok;
 		_ ->
 			work_loop(State)
   end.
 
+
+need_shutdown(Pid, State) ->
+	Parent = State#modstate.parent_pid,
+	Conn = State#modstate.conn,
+	case Pid of 
+	Parent -> 
+		(catch riakc_pb_socket:stop(Conn));
+	_ -> ok 
+	end.
 
 connection(#modstate{host = Host, port = Port, auto_reconnect = AutoReconnect} = State)  ->
   case riakc_pb_socket:start_link(Host, Port, [{auto_reconnect, AutoReconnect}]) of 
