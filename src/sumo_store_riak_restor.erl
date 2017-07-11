@@ -289,6 +289,10 @@ delete_by_key(Conn, Bucket, Key, Opts, State) ->
    case delete_map(Conn, Bucket, sumo_util:to_bin(Key), Opts) of 
     ok ->
       {ok, 1, State};
+    {error, disconnected} ->
+      delete_by_key(Conn, Bucket, Key, Opts, State);
+    {error, nofound} -> 
+      {ok, 0, State};
     {error, Error} ->
       {error, Error, State}
     end.
@@ -300,10 +304,13 @@ delete_by_index(_DocName, Conn, Index, Bucket, Conditions, Opts, State) ->
     {ok, {search_results, Results, _, Total}} ->
         Fun = fun({_, Obj}) ->
           Key = proplists:get_value(<<"_yz_rk">>, Obj),
-          riakc_pb_socket:delete(Conn, Bucket, sumo_util:to_bin(Key), Opts)
+          delete_by_key(Conn, Bucket, sumo_util:to_bin(Key), Opts, State)
+          %%riakc_pb_socket:delete(Conn, Bucket, sumo_util:to_bin(Key), Opts)
         end, 
         lists:foreach(Fun, Results),
         {ok, Total, State};
+    {error, disconnected} ->
+        delete_by_index(_DocName, Conn, Index, Bucket, Conditions, Opts, State);
     {error, _Error} = Err -> 
         Err
     end.
@@ -428,6 +435,8 @@ search_docs_by(DocName, Conn, Index, Query, Limit, Offset) ->
       end,
       NewRes = lists:reverse(lists:foldl(F, [], Results)),
       {ok, {Total, NewRes}};
+    {error, disconnected} ->
+      search_docs_by(DocName, Conn, Index, Query, Limit, Offset);
     {error, Error} ->
       {error, Error}
   end.
@@ -442,6 +451,8 @@ search_docs_by(DocName, Conn, Index, Query, SortQuery, Limit, Offset) ->
       end,
       NewRes = lists:reverse(lists:foldl(F, [], Results)),
       {ok, {Total, NewRes}};
+    {error, disconnected} ->
+      search_docs_by(DocName, Conn, Index, Query, SortQuery, Limit, Offset);
     {error, Error} ->
       {error, Error}
   end.
@@ -455,6 +466,8 @@ search_docs_by(DocName, Conn, Index, Query, Filters, SortQuery, Limit, Offset) -
       end,
       NewRes = lists:reverse(lists:foldl(F, [], Results)),
       {ok, {Total, NewRes}};
+    {error, disconnected} ->
+      search_docs_by(DocName, Conn, Index, Query, Filters, SortQuery, Limit, Offset);
     {error, Error} ->
       {error, Error}
   end.

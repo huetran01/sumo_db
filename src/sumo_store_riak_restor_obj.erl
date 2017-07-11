@@ -79,7 +79,9 @@ persist(<<>>, Doc, #state{conn = Conn, bucket = Bucket, put_opts = _Opts} = Stat
     riakc_obj:update_value(OldObj, JsonDoc);
   _ -> riakc_obj:new(Bucket, Id, JsonDoc, "application/json")
   end,
-  case riakc_pb_socket:put(Conn, ObjectData, [return_body]) of 
+  case riakc_pb_socket:put(Conn, ObjectData, [return_body]) of
+  {error, disconnected} -> 
+    persist(<<>>, Doc, State);
   {error, Error} ->
     {error, Error, State};
   {ok, RespData} -> 
@@ -102,6 +104,8 @@ persist(OldObj, Doc, #state{conn = Conn,  put_opts = _Opts, bucket = Bucket} = S
                   riakc_obj:new(Bucket, Id, JsonDoc, "application/json")
   end,
   case riakc_pb_socket:put(Conn, ObjectData, [return_body]) of 
+  {error, disconnected} -> 
+     persist(OldObj, Doc, State);
   {error, Error} ->
     {error, Error, State};
   {ok, RespData} -> 
@@ -120,7 +124,9 @@ persist(Doc,
   {IdField, Id} = get_id(Doc),
 	JsonDoc = doc_to_json(Doc),
 	ObjectData = riakc_obj:new(Bucket, Id, JsonDoc, "application/json"), 
-	case riakc_pb_socket:put(Conn, ObjectData, [return_body]) of 
+	case riakc_pb_socket:put(Conn, ObjectData, [return_body]) of
+  {error, disconnected} ->
+    persist(Doc, State);
 	{error, Error} ->
 		{error, Error, State};
   {ok, RespData} -> 
@@ -234,7 +240,7 @@ delete_all(_DocName,
 
 %% private
 
-search_by_key(DocName, Conn, Bucket, Key, _Opts, State) ->
+search_by_key(DocName, Conn, Bucket, Key, Opts, State) ->
 	case  riakc_pb_socket:get(Conn, Bucket, sumo_util:to_bin(Key)) of 
 		{ok, FetchedData} ->
 			DataJson = riakc_obj:get_value(FetchedData),
@@ -242,6 +248,8 @@ search_by_key(DocName, Conn, Bucket, Key, _Opts, State) ->
 			{ok, [#{doc => Val, obj => FetchedData}], State};
 		{error, notfound} ->
 			{ok, [], State};
+		{error, disconnected} ->
+			search_by_key(DocName, Conn, Bucket, Key, Opts, State);
 		{error, Error} ->
 			{error, Error, State}
 	end. 
@@ -289,24 +297,29 @@ search_by_index(DocName, Conn, Index, Conditions, Filters, SortFields, Limit, Of
   end.
 
 
-delete_by_key(Conn, Bucket, Key, _Opts, State) ->
+delete_by_key(Conn, Bucket, Key, Opts, State) ->
 	case riakc_pb_socket:delete(Conn, Bucket, sumo_util:to_bin(Key)) of  
     ok ->
       {ok, 1, State};
+    {error, disconnected} ->
+      delete_by_key(Conn, Bucket, Key, Opts, State);
     {error, Error} ->
       {error, Error, State}
     end.
 
-delete_by_index(_DocName, Conn, Index, Bucket, Conditions, Opts, State) ->
+delete_by_index(DocName, Conn, Index, Bucket, Conditions, Opts, State) ->
     Query = sumo_util:build_query(Conditions),
     case riakc_pb_socket:search(Conn, Index, Query, [{start, 0}, {rows, ?LIMIT}]) of 
     {ok, {search_results, Results, _, Total}} ->
         Fun = fun({_, Obj}) ->
           Key = proplists:get_value(<<"_yz_rk">>, Obj),
-          riakc_pb_socket:delete(Conn, Bucket, sumo_util:to_bin(Key), Opts)
+          delete_by_key(Conn, Bucket,  sumo_util:to_bin(Key), Opts, State)
+          %riakc_pb_socket:delete(Conn, Bucket, sumo_util:to_bin(Key), Opts)
         end, 
         lists:foreach(Fun, Results),
         {ok, Total, State};
+    {error, disconnected} ->
+       delete_by_index(DocName, Conn, Index, Bucket, Conditions, Opts, State);
     {error, _Error} = Err -> 
         Err
     end.
@@ -480,6 +493,8 @@ search_docs_by(DocName, Conn, Index, Query, Limit, Offset) ->
     end, 
     NewRes = lists:reverse(lists:foldl(F, [], Results)),
     {ok, {Total, NewRes}};
+  {error, disconnected} ->
+    search_docs_by(DocName, Conn, Index, Query, Limit, Offset);
   {error, Error} ->
     {error, Error}
   end.
@@ -495,6 +510,8 @@ search_docs_by(DocName, Conn, Index, Query, SortQuery, Limit, Offset) ->
     end, 
     NewRes = lists:reverse(lists:foldl(F, [], Results)),
     {ok, {Total, NewRes}};
+  {error, disconnected} ->
+    search_docs_by(DocName, Conn, Index, Query, SortQuery, Limit, Offset);
   {error, Error} ->
     {error, Error}
   end.
@@ -509,6 +526,8 @@ search_docs_by(DocName, Conn, Index, Query, Filters, SortQuery, Limit, Offset) -
     end, 
     NewRes = lists:reverse(lists:foldl(F, [], Results)),
     {ok, {Total, NewRes}};
+  {error, disconnected} ->
+    search_docs_by(DocName, Conn, Index, Query, Filters, SortQuery, Limit, Offset);
   {error, Error} ->
     {error, Error}
   end.
