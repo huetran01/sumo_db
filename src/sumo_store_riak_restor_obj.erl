@@ -303,6 +303,8 @@ delete_by_key(Conn, Bucket, Key, Opts, State) ->
       {ok, 1, State};
     {error, disconnected} ->
       delete_by_key(Conn, Bucket, Key, Opts, State);
+    {error, notfound} ->
+      {ok, 0, State};
     {error, Error} ->
       {error, Error, State}
     end.

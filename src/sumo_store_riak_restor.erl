@@ -91,6 +91,8 @@ persist(<<>>, Doc, #state{conn = Conn, bucket = Bucket, put_opts = Opts} = State
   end,
   DocRMap = doc_to_rmap(NewDoc, InitObj),
   case update_map(Conn, Bucket, Id, DocRMap, Opts) of 
+  {error, disconnected} -> 
+    persist(<<>>, Doc, State);
   {error, Error} ->
     {error, Error, State};
   _ ->
@@ -102,6 +104,8 @@ persist(OldObj, Doc, #state{conn = Conn, bucket = Bucket,  put_opts = Opts} = St
   {Id, NewDoc} = new_doc(Doc, State),
   DocRMap = doc_to_rmap(NewDoc, OldObj),
   case update_map(Conn, Bucket, Id, DocRMap , Opts) of 
+    {error, disconnected} -> 
+      persist(OldObj, Doc, State);
     {error, Error} ->
       {error, Error, State};
     _ ->
@@ -112,11 +116,12 @@ persist(OldObj, Doc, #state{conn = Conn, bucket = Bucket,  put_opts = Opts} = St
   sumo_internal:doc(), state()
 ) -> sumo_store:result(sumo_internal:doc(), state()).
 %% insert object
-persist(Doc,
-    #state{conn = Conn, bucket = Bucket, put_opts = Opts} = State) ->
+persist(Doc, #state{conn = Conn, bucket = Bucket, put_opts = Opts} = State) ->
   {Id, NewDoc} = new_doc(Doc, State),
   DocRMap = doc_to_rmap(NewDoc, riakc_map:new()),
-  case update_map(Conn, Bucket, Id, DocRMap, Opts) of 
+  case update_map(Conn, Bucket, Id, DocRMap, Opts) of
+    {error, disconnected} ->
+      persist(Doc, State);
     {error, Error} ->
       {error, Error, State};
     _ ->
@@ -243,6 +248,8 @@ search_by_key(DocName, Conn, Bucket, Key, Opts, State) ->
       {ok, [#{doc => Val, obj => RMap}], State};
     {error, {notfound, _}} ->
       {ok, [], State};
+    {error, disconnected} ->
+      search_by_key(DocName, Conn, Bucket, Key, Opts, State);
     {error, Error} ->
       {error, Error, State}
     end.
@@ -291,7 +298,7 @@ delete_by_key(Conn, Bucket, Key, Opts, State) ->
       {ok, 1, State};
     {error, disconnected} ->
       delete_by_key(Conn, Bucket, Key, Opts, State);
-    {error, nofound} -> 
+    {error, notfound} -> 
       {ok, 0, State};
     {error, Error} ->
       {error, Error, State}
