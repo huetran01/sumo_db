@@ -29,10 +29,10 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%% Public API.
--export([get_connection/1,
-	get_conn_info/1,
-	pool_name/1,
-	statistic/1,
+-export([
+	get_conn_info/0,
+	pool_name/0,
+	statistic/0,
 	default_strategy/0]).
 
 %%% Exports for sumo_backend
@@ -110,29 +110,25 @@
 
 -spec start_link(atom(), proplists:proplist()) -> {ok, pid()}|term().
 start_link(Name, Options) ->
-  gen_server:start_link({local, Name}, ?MODULE, Options, []).
+  init(Name, Options).
 
--spec get_connection(atom() | pid()) -> atom().
-get_connection(Name) ->
-  gen_server:call(Name, get_connection).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% gen_server stuff.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -spec init([term()]) -> {ok, pid()}.
-init([undefined, State]) ->
+init([State]) ->
   process_flag(trap_exit, true),
   HandlerPid = spawn_link(fun() -> worker_init(State) end),
   HandlerPid ! {init_conn, self()},
-  {ok, State#modstate{worker_handler = HandlerPid}};
+  {ok, State#modstate{worker_handler = HandlerPid}}.
 
-init(Options) ->
+init(_Name, Options) ->
   %% Get connection parameters
   Host = proplists:get_value(host, Options, "127.0.0.1"),
   Port = proplists:get_value(port, Options, 8087),
   PoolSize = proplists:get_value(poolsize, Options, 100),
-  WritePoolSize = proplists:get_value(write_pool_size, Options, PoolSize),
   TimeoutRead = proplists:get_value(timeout_read, Options,  ?TIMEOUT_GENERAL),
   TimeoutWrite = proplists:get_value(timeout_write, Options, ?TIMEOUT_GENERAL),
   TimeoutMapReduce = proplists:get_value(timeout_mapreduce, Options, ?TIMEOUT_GENERAL),
@@ -141,60 +137,58 @@ init(Options) ->
   State = #modstate{host = Host, port = Port, opts = Opts, timeout_read = TimeoutRead,
 			timeout_write = TimeoutWrite, timeout_mapreduce = TimeoutMapReduce,
 			auto_reconnect = AutoReconnect},
-  WritePoolOptions    = [ {overrun_warning, 10000}
+  PoolOptions    = [ {overrun_warning, 10000}
 					, {overrun_handler, {sumo_internal, report_overrun}}
-					, {workers, WritePoolSize}
-					, {worker, {?MODULE, [undefined, State#modstate{pool_name = ?SUMO_POOL}]}}],
-  wpool:start_pool(?SUMO_POOL, WritePoolOptions),
-  {ok, #modstate{host = Host, port = Port, opts = Opts}}.
+					, {workers, PoolSize}
+					, {pool_sup_shutdown, 'infinity'}
+					, {pool_sup_intensity, 10}
+					, {pool_sup_period, 10}
+					, {worker, {?MODULE, [State#modstate{pool_name = pool_name()}]}}],
+  wpool:start_pool(pool_name(), PoolOptions).
 
 %%%
 %%%
 
 create_schema(Schema, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {create_schema, Schema, HState, Handler}, default_strategy(), infinity).
+	wpool:call(pool_name(), {create_schema, Schema, HState, Handler}, default_strategy(), infinity).
 
 persist( Doc, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {persist, Doc, HState, Handler}, default_strategy(), infinity).
+	wpool:call(pool_name(), {persist, Doc, HState, Handler}, default_strategy(), infinity).
 
 
 persist(OldObj, Doc, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {persist, OldObj, Doc, HState, Handler}, default_strategy(), infinity).
+	wpool:call(pool_name(), {persist, OldObj, Doc, HState, Handler}, default_strategy(), infinity).
 
 
 delete_by(DocName, Conditions, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {delete_by, DocName, Conditions, HState, Handler}, default_strategy(), infinity).
+	wpool:call(pool_name(), {delete_by, DocName, Conditions, HState, Handler}, default_strategy(), infinity).
 
 delete_all(DocName, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {delete_all, DocName, HState, Handler}, default_strategy(), infinity).
+	wpool:call(pool_name(), {delete_all, DocName, HState, Handler}, default_strategy(), infinity).
 
 find_all(DocName, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {find_all, DocName, HState, Handler}, default_strategy(), infinity).
+	wpool:call(pool_name(), {find_all, DocName, HState, Handler}, default_strategy(), infinity).
 
 find_all(DocName, SortFields, Limit, Offset, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {find_all, DocName, SortFields, Limit, Offset, HState, Handler}, default_strategy(), infinity).
+	wpool:call(pool_name(), {find_all, DocName, SortFields, Limit, Offset, HState, Handler}, default_strategy(), infinity).
 
 find_by(DocName, Conditions, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {find_by, DocName, Conditions, HState, Handler}, default_strategy(), infinity).
+	wpool:call(pool_name(), {find_by, DocName, Conditions, HState, Handler}, default_strategy(), infinity).
 
 find_by(DocName, Conditions, Limit, Offset, HState, Handler) ->
-	wpool:call(?SUMO_POOL,  {find_by, DocName, Conditions, Limit, Offset, HState, Handler}, default_strategy(), infinity).
+	wpool:call(pool_name(),  {find_by, DocName, Conditions, Limit, Offset, HState, Handler}, default_strategy(), infinity).
 
 find_by(DocName, Conditions, SortFields, Limit, Offset, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {find_by, DocName, Conditions, SortFields, Limit, Offset, HState, Handler}, default_strategy(), infinity).
+	wpool:call(pool_name(), {find_by, DocName, Conditions, SortFields, Limit, Offset, HState, Handler}, default_strategy(), infinity).
 
 find_by(DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler) ->
-	wpool:call(?SUMO_POOL, {find_by, DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler}, default_strategy(), infinity).
+	wpool:call(pool_name(), {find_by, DocName, Conditions, Filter, SortFields, Limit, Offset, HState, Handler}, default_strategy(), infinity).
 
 call(Handler, Function, Args, DocName, HState) ->
-	wpool:call(?SUMO_POOL, {call, Handler, Function, Args, DocName, HState}, default_strategy(), infinity).
+	wpool:call(pool_name(), {call, Handler, Function, Args, DocName, HState}, default_strategy(), infinity).
 
 %% @todo: implement connection pool.
 %% In other cases is a built-in feature of the client.
--spec handle_call(term(), term(), state()) -> {reply, term(), state()}.
-handle_call(get_connection, _From, State = #modstate{host = Host, port = Port, opts = Opts}) ->
-	{ok, Conn} = riakc_pb_socket:start_link(Host, Port, Opts),
-  	{reply, Conn, State};
 
 handle_call(get_conn_info, From, State = #modstate{worker_handler = HandlerPid}) ->
   	HandlerPid ! {get_conn_info, From},
@@ -209,9 +203,6 @@ handle_call(test_ok, _From,#modstate{worker_handler = HandlerPid} = State) ->
   {reply, HandlerPid, State};
 
 handle_call(test_crash, _From, #modstate{conn = Conn} = State) ->
-  %% do something forced process died 
-  % A = 1, 
-  % A = 2 ,
   {reply, Conn, State};
 
 handle_call({create_schema, Schema, HState, Handler}, From, #modstate{worker_handler = HandlerPid} = State) ->
@@ -287,13 +278,21 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 handle_info(_Msg, State) -> {noreply, State}.
 
 -spec terminate(term(), state()) -> ok.
-terminate(_Reason, _State) -> 
-	lager:error("sumo: process died",[]),
-  	ok.
+terminate(_Reason, #modstate{worker_handler = HandlerPid} =  _State)  -> 
+	case is_process_alive(HandlerPid) of 
+	true -> HandlerPid ! {stop, self()};
+	_ -> ok 
+	end,
+  	ok;
+terminate(_Reason, _State) ->
+	ok.
 
 -spec code_change(term(), state(), term()) -> {ok, state()}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
+
+pool_name() ->
+	?MODULE.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% gen_server stuff.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -384,9 +383,12 @@ work_loop(State) ->
 			Result = handle_func_call(Function, Args, DocName, HState#state{conn = Conn}, Handler),
 			gen_server:reply(Caller, Result),
 			work_loop(State);
-
 		{'EXIT', Pid, Reason} ->
 			lager:error("sumo: driver worker ~p exited with ~p~n", [Pid, Reason]),
+			need_shutdown(Pid, State),
+			ok;
+		{stop, Pid} ->
+			% lager:error("sumo: driver worker ~p stop",[Pid]),
 			need_shutdown(Pid, State),
 			ok;
 		_ ->
@@ -474,7 +476,7 @@ handle_func_call(Function, Args, DocName, HState, Handler) ->
 get_riak_conn(PoolName) ->
   case ets:lookup(sumo_pool, PoolName) of 
   [] ->
-	wpool:call(PoolName, get_connection);
+	get_conn_info();
   Pids ->
 	{_, Conn} = lists:nth(erlang:phash(erlang:timestamp(), length(Pids)), Pids),
 	Conn
@@ -495,14 +497,8 @@ riak_opts(Options) ->
   Opts1.
 
 
-get_conn_info(write) ->
-  wpool:call(?SUMO_POOL, get_conn_info);
-
-get_conn_info(read) -> 
-  wpool:call(?READ, get_conn_info);
-
-get_conn_info(_) ->
-  ok.
+get_conn_info() ->
+  wpool:call(pool_name(), get_conn_info).
 
 -spec default_strategy() -> strategy().
 default_strategy() ->
@@ -511,9 +507,9 @@ default_strategy() ->
 		{ok, Strategy} -> Strategy
 	end.
 
-statistic(write) ->
+statistic() ->
   Get = fun proplists:get_value/2,
-  InitStats = ?THROW_TO_ERROR(wpool:stats(?SUMO_POOL)),
+  InitStats = ?THROW_TO_ERROR(wpool:stats(pool_name())),
   PoolPid = Get(supervisor, InitStats),
   Options = Get(options, InitStats),
   InitWorkers = Get(workers, InitStats),
@@ -524,12 +520,6 @@ statistic(write) ->
 	  Memory = Get(memory, WorkerStats),
 	  {status, WorkerStats, MsgQueueLen, Memory}
 	end || I <- lists:seq(1, length(InitWorkers))],
-	[PoolPid, Options, WorkerStatus];
+	[PoolPid, Options, WorkerStatus].
 
-
-statistic(_) ->
-  ok.
-
-pool_name(write) -> ?SUMO_POOL;
-pool_name(_) -> ok.
 

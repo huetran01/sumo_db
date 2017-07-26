@@ -1,7 +1,5 @@
 
 
--define(SUMO_POOL, sumo_write_pool).
--define(READ, sumo_read_pool).
 -define(STRATEGY, wpool:default_strategy()).
 
 -define(INVALID_QUERY, <<"(())">>).

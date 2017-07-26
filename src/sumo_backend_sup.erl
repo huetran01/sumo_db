@@ -25,8 +25,8 @@
   { Name                                                           % Child Id
   , {Module, start_link, [Name, Options]}                          % Start Fun
   , permanent                                                      % Restart
-  , 5000                                                           % Shutdown
-  , worker                                                         % Type
+  , 'infinity'                                                           % Shutdown
+  , supervisor                                                         % Type
   , [Module]                                                       % Modules
   }
 ).
