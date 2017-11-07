@@ -277,7 +277,9 @@ search_by_index(DocName, Conn, Index, Conditions, SortFields, Limit, Offset, Sta
       SortQuery = sumo_util:build_sort_query(SortFields),
       lager:debug("Query: ~p; SortQuery: ~p",[Query, SortQuery]),
       case search_docs_by(DocName, Conn, Index, Query, SortQuery, Limit, Offset) of 
-        {ok, {_, Res}} -> {ok, Res, State} ;
+        {ok, {_, Res}} ->
+      		lager:debug("search_by_index: Res ~p",[Res]),
+				 	{ok, Res, State} ;
         {error, Error} -> {error, Error, State}
       end
   end. 
@@ -426,34 +428,58 @@ doc_to_json(Doc) ->
 
 
 append_riak_suffix(Fields) ->
-	lists:flatmap(fun update_field/1, maps:to_list(Fields)).
+  lager:debug("append_riak_suffix:  Fields ~p ~n", [Fields]),
+	Results  = lists:flatmap(fun update_field/1, maps:to_list(Fields)),
+	lager:debug("append_riak_suffix:  Results ~p ~n", [Results]),
+	Results.
+
 
 update_field({K, V}) when is_map(V) ->
+  lager:debug("update_field:  ~p; ~p ~n", [K, V]),
 	NewVal = append_riak_suffix(V),
+  lager:debug("update_field:  NewVal ~p ~n", [NewVal]),
 	BinKey = sumo_util:to_bin(K),
+  lager:debug("update_field:  BinKey ~p ~n", [BinKey]),
 	[{<<BinKey/binary, "_map">>, NewVal}];
 
 update_field({K, V}) when is_list(V) ->
+  lager:debug("update_field when_is_list:  ~p; ~p ~n", [K, V]),
 	BinKey = sumo_util:to_bin(K),
 	case io_lib:printable_list(V) of
 	true ->
 		[{<<BinKey/binary, "_register">>, V}] ;
 	_ ->
 		{SetEls, MapEls} = map_filter(V),
-		NewMaps = if MapEls /= [] ->
-						[{<<BinKey/binary, "_map">>, lists:reverse(MapEls)}] ;
-					true ->
-						[]
-				end,
+  	lager:debug("update_field when_is_list: MapEls ~p ~n", [MapEls]),
+		NewMaps = case MapEls of
+			[{_K, _V}|_] ->
+					[{<<BinKey/binary, "_map">>, lists:reverse(MapEls)}]
+				;
+			[] ->
+				[]
+				;
+			_ ->
+					%[[{<<"group_id_set">>,<<"group42471085be4e20bdfb4fdaa6ab7698ca">>},{<<"permissions_arr_set">>,[<<"view_work_order">>]}]]
+					Fun = 
+					[{<<BinKey/binary, "_set">>, lists:reverse(MapEls)}]
+		end,
+ %    NewMaps = if MapEls /= [] ->
+					%   [{<<BinKey/binary, "_map">>, lists:reverse(MapEls)}] ;
+					% true ->
+					%   []
+				% end,
+  	lager:debug("update_field when_is_list: NewMaps ~p ~n", [NewMaps]),
 		NewSet = if SetEls /= [] ->
 						[{<<BinKey/binary, "_set">>, lists:reverse(SetEls)}] ;
 					true ->
 						[]
 				end,  
+  	lager:debug("update_field when_is_list: NewSet ~p ~n", [NewSet]),
 		NewMaps ++ NewSet
 	end; 
 
 update_field({K, V}) ->
+  lager:debug("update_field when_is_binary:  ~p; ~p ~n", [K, V]),
 	BinKey = sumo_util:to_bin(K),
 	case sumo_util:suffix(K) of 
 	true ->  %% Key with suffix "_arr", defaut store with set
@@ -463,24 +489,32 @@ update_field({K, V}) ->
 	end. 	
 
 map_filter(V) ->
+ lager:debug("map_filter V ~p ~n", [V]),
  lists:foldl(
  	fun(Els, {Set, Map}) when is_map(Els) ->
     	Res = lists:map(fun rset/1, maps:to_list(Els)),
     	{Set, [Res| Map]};
   	(Els, {Set, Map}) ->
+ 			lager:debug("map_filter: Els ~p ~n", [Els]),
     	{[Els | Set], Map}
   	end, {[], []}, V).
 
 
 
 rset({K, V}) when is_binary(V) ->
+  lager:debug("rset K ~p; V ~p ~n", [K, V]),
 	BinKey = sumo_util:to_bin(K),
 	{<<BinKey/binary, "_set">>, V};
+
 rset({K, V}) when is_map(V) ->
 	BinKey = sumo_util:to_bin(K),
 	NewVal = lists:flatmap(fun update_field/1, maps:to_list(V)),
-	{<<BinKey/binary, "_map">>, NewVal}.
+	{<<BinKey/binary, "_map">>, NewVal};
 
+rset({K, V}) ->
+ 	lager:debug("rset: V ~p ~n", [V]),
+	BinKey = sumo_util:to_bin(K),
+	{<<BinKey/binary, "_set">>, V}.
 
 
 %% @private
@@ -505,6 +539,7 @@ search_docs_by(DocName, Conn, Index, Query, Limit, Offset) ->
 search_docs_by(DocName, Conn, Index, Query, SortQuery, Limit, Offset) ->
   case riakc_pb_socket:search(Conn, Index, Query, [{start, Offset}, {rows, Limit}, {sort, SortQuery}]) of
   {ok, {search_results, Results, _, Total}} ->
+			lager:debug("Results ~p ~n", [Results]),
     F = fun({_, KV}, Acc) ->  
       {MapData, Doc} = kv_to_doc(DocName, KV),
       NewDoc = sumo_internal:new_doc(DocName, get_all_map_from_data(MapData, Doc)),

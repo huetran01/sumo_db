@@ -67,8 +67,10 @@ build_sort_key([K], Acc) ->
   end;
 
 build_sort_key([K | T], <<"">>) ->
+	lager:info("build_sort_key: K ~p ~n", [K]),
   build_sort_key(T, binary:list_to_bin([K, "_map"]));
 build_sort_key([K | T], Acc) ->
+	lager:info("build_sort_key: K ~p ~n", [K]),
   build_sort_key(T, binary:list_to_bin([Acc, ".", K, "_map"])).
 
 -spec build_sort_query([] | [tuple()]) -> binary().
@@ -157,10 +159,12 @@ query_eq(K, V) ->
 
 %% @private
 build_key(K) ->
+	lager:info("build_key: K ~p ~n", [binary:split(to_bin(K), <<".">>, [global])]),
   build_key(binary:split(to_bin(K), <<".">>, [global]), <<"">>).
 
 %% @private
 build_key([K], <<"">>) ->
+	lager:info("build_key: K ~p ~n", [K]),
   case suffix(K) of 
   true -> 
   binary:list_to_bin([K, "_set:"]);
@@ -169,6 +173,7 @@ build_key([K], <<"">>) ->
   end;
 
 build_key([K], Acc) ->
+	lager:info("build_key: K ~p ~n", [K]),
   case suffix(K) of 
   true ->
   binary:list_to_bin([Acc, ".", K, "_set:"]);
@@ -177,12 +182,22 @@ build_key([K], Acc) ->
   end;
 
 build_key([K | T], <<"">>) ->
-  build_key(T, binary:list_to_bin([K, "_map"]));
+	lager:info("build_key: K ~p ~n", [K]),
+	%build_key(T, build_key([K], <<"">>));
+	case suffix(K) of
+		true ->
+			build_key(T, binary:list_to_bin([K, "_set"]));
+		_ ->
+			build_key(T, binary:list_to_bin([K, "_map"]))
+	end;
+  
+
 build_key([K | T], Acc) ->
   build_key(T, binary:list_to_bin([Acc, ".", K, "_map"])).
 
 -spec suffix(term()) -> boolean().
 suffix(Key) ->
+	lager:info("suffix: Key ~p ~n", [Key]),
   KeyStr = to_str(Key),
   lists:suffix("arr", KeyStr).
 
