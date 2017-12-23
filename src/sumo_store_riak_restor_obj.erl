@@ -493,7 +493,7 @@ search_docs_by(DocName, Conn, Index, Query, Limit, Offset) ->
     NewDoc = sumo_internal:new_doc(DocName, get_all_map_from_data(MapData, Doc)),
     [#{doc => NewDoc, obj => <<>>} | Acc]
     end, 
-    NewRes = lists:reverse(lists:foldl(F, [], Results)),
+    NewRes = lists:foldl(F, [], Results),
     {ok, {Total, NewRes}};
   {error, disconnected} ->
     search_docs_by(DocName, Conn, Index, Query, Limit, Offset);
@@ -510,7 +510,7 @@ search_docs_by(DocName, Conn, Index, Query, SortQuery, Limit, Offset) ->
       NewDoc = sumo_internal:new_doc(DocName, get_all_map_from_data(MapData, Doc)),
       [#{doc => NewDoc, obj => <<>>} | Acc] 
     end, 
-    NewRes = lists:reverse(lists:foldl(F, [], Results)),
+    NewRes = lists:foldl(F, [], Results),
     {ok, {Total, NewRes}};
   {error, disconnected} ->
     search_docs_by(DocName, Conn, Index, Query, SortQuery, Limit, Offset);
@@ -626,9 +626,9 @@ process_to_collect_map([], Acc) -> Acc;
 
 process_to_collect_map(FieldValues, Acc) ->
 	% lager:info("FieldValues: ~p ~n",[FieldValues]),
-  El = maps:from_list(FieldValues),
+  El = maps:from_list(lists:reverse(FieldValues)),
   RemainEls = lists:subtract(FieldValues, maps:to_list(El)),
-  process_to_collect_map(RemainEls, [El | Acc]).
+  process_to_collect_map(RemainEls, Acc++[El]).
 
 get_value([Val]) -> 
   Val ;
