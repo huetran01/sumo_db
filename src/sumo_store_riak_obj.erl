@@ -493,7 +493,7 @@ search_docs_by(DocName, Conn, Index, Query, Limit, Offset) ->
     NewDoc = sumo_internal:new_doc(DocName, get_all_map_from_data(MapData, Doc)),
     [#{doc => NewDoc, obj => <<>>} | Acc]
     end, 
-    NewRes = lists:foldl(F, [], Results),
+    NewRes = lists:foldr(F, [], Results),
     {ok, {Total, NewRes}};
   {error, disconnected} ->
     search_docs_by(DocName, Conn, Index, Query, Limit, Offset);
@@ -510,7 +510,7 @@ search_docs_by(DocName, Conn, Index, Query, SortQuery, Limit, Offset) ->
       NewDoc = sumo_internal:new_doc(DocName, get_all_map_from_data(MapData, Doc)),
       [#{doc => NewDoc, obj => <<>>} | Acc] 
     end, 
-    NewRes = lists:foldl(F, [], Results),
+    NewRes = lists:foldr(F, [], Results),
     {ok, {Total, NewRes}};
   {error, disconnected} ->
     search_docs_by(DocName, Conn, Index, Query, SortQuery, Limit, Offset);
@@ -526,7 +526,7 @@ search_docs_by(DocName, Conn, Index, Query, Filters, SortQuery, Limit, Offset) -
       NewDoc = sumo_internal:new_doc(DocName, get_all_map_from_data(MapData, Doc)),
       [#{doc => NewDoc, obj => <<>>} | Acc]
     end, 
-    NewRes = lists:reverse(lists:foldl(F, [], Results)),
+    NewRes = lists:foldr(F, [], Results),
     {ok, {Total, NewRes}};
   {error, disconnected} ->
     search_docs_by(DocName, Conn, Index, Query, Filters, SortQuery, Limit, Offset);
