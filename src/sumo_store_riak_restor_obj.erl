@@ -479,9 +479,15 @@ rset({K, V}) when is_binary(V) ->
 rset({K, V}) when is_map(V) ->
 	BinKey = sumo_util:to_bin(K),
 	NewVal = lists:flatmap(fun update_field/1, maps:to_list(V)),
-	{<<BinKey/binary, "_map">>, NewVal}.
+	{<<BinKey/binary, "_map">>, NewVal};
 
-
+rset({K, V}) when is_list(V) ->
+  case update_field({K, V}) of
+        [F] -> F;
+        _ ->
+        BinKey = sumo_util:to_bin(K),
+                {<<BinKey/binary,"_map">>, <<>>}
+end.
 
 %% @private
 

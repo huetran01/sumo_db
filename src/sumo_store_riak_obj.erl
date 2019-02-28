@@ -421,7 +421,9 @@ get_id(Doc) ->
 
 doc_to_json(Doc) ->
 	Fields = sumo_internal:doc_fields(Doc),
+lager:debug("doc_to_json fields: ~p~n",[Fields]),
 	DataProps = append_riak_suffix(Fields),
+lager:debug("doc_to_json DataProps: ~p~n",[DataProps]),
 	jsx:encode(DataProps).
 
 
@@ -434,6 +436,7 @@ update_field({K, V}) when is_map(V) ->
 	[{<<BinKey/binary, "_map">>, NewVal}];
 
 update_field({K, V}) when is_list(V) ->
+io:format("update_field2: ~p ~n",[V]),
 	BinKey = sumo_util:to_bin(K),
 	case io_lib:printable_list(V) of
 	true ->
@@ -479,7 +482,16 @@ rset({K, V}) when is_binary(V) ->
 rset({K, V}) when is_map(V) ->
 	BinKey = sumo_util:to_bin(K),
 	NewVal = lists:flatmap(fun update_field/1, maps:to_list(V)),
-	{<<BinKey/binary, "_map">>, NewVal}.
+	{<<BinKey/binary, "_map">>, NewVal};
+
+rset({K, V}) when is_list(V) ->
+  case update_field({K, V}) of
+	[F] -> F;
+	_ -> 
+	BinKey = sumo_util:to_bin(K),
+		{<<BinKey/binary,"_map">>, <<>>}
+end.
+
 
 
 
@@ -487,7 +499,8 @@ rset({K, V}) when is_map(V) ->
 
 search_docs_by(DocName, Conn, Index, Query, Limit, Offset) ->
  case riakc_pb_socket:search(Conn, Index, Query, [{start, Offset}, {rows, Limit}]) of
-  {ok, {search_results, Results, _, Total}} ->
+  {ok, {search_results, Results, Other, Total}} ->
+lager:debug("search_docs_by Results 1: ~p, Other: ~p, Total: ~p~n",[Results, Other, Total]),
     F = fun({_, KV}, Acc) ->  
     {MapData, Doc} = kv_to_doc(DocName, KV),
     NewDoc = sumo_internal:new_doc(DocName, get_all_map_from_data(MapData, Doc)),
@@ -504,7 +517,8 @@ search_docs_by(DocName, Conn, Index, Query, Limit, Offset) ->
 
 search_docs_by(DocName, Conn, Index, Query, SortQuery, Limit, Offset) ->
   case riakc_pb_socket:search(Conn, Index, Query, [{start, Offset}, {rows, Limit}, {sort, SortQuery}]) of
-  {ok, {search_results, Results, _, Total}} ->
+  {ok, {search_results, Results, Other, Total}} ->
+io:format("search_docs_by Results 2: ~p, Other: ~p, Total: ~p~n",[Results, Other, Total]),
     F = fun({_, KV}, Acc) ->  
       {MapData, Doc} = kv_to_doc(DocName, KV),
       NewDoc = sumo_internal:new_doc(DocName, get_all_map_from_data(MapData, Doc)),
